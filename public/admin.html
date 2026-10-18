@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Admin · DC Sport Score</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="offline-banner">Sin conexión con el servidor</div>
+
+<div class="pin-box" id="pinView">
+  <h1>Administración</h1>
+  <p class="muted" id="pinRoom"></p>
+  <form id="pinForm">
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="12" required>
+    <button type="submit" style="width:100%">Entrar</button>
+  </form>
+  <p class="muted">El PIN se define con la variable de entorno ADMIN_PIN (por defecto 1234).</p>
+  <p><a href="/">← Inicio</a></p>
+</div>
+
+<main class="admin hidden" id="adminView">
+  <header>
+    <h1>Administración · <span id="roomName"></span></h1>
+    <span class="conn" id="conn" data-status="connecting">Conectando…</span>
+  </header>
+
+  <section class="card">
+    <div class="summary" id="summary">—</div>
+    <p class="muted" id="queueInfo"></p>
+    <p class="muted" id="presence"></p>
+    <p class="muted"><a id="lnkScreen" target="_blank">Abrir marcador</a> · <a id="lnkControl" target="_blank">Abrir control</a></p>
+  </section>
+
+  <section class="card">
+    <h2>Equipos (2 a 6)</h2>
+    <form id="teamsForm">
+      <div id="teamRows" class="grid2"></div>
+      <div class="btns">
+        <button class="alt" type="button" id="addTeam">+ Agregar equipo</button>
+        <button type="submit">Guardar equipos</button>
+      </div>
+      <p class="muted">Nombre vacío = «EQUIPO N». Con 3 o más equipos se juega por rotación (sin fin automático de partido).</p>
+    </form>
+  </section>
+
+  <section class="card" id="courtCard">
+    <h2>En cancha</h2>
+    <form id="courtForm" class="grid3">
+      <label class="field">Lado izquierdo (A)<select id="courtA"></select></label>
+      <label class="field">Lado derecho (B)<select id="courtB"></select></label>
+      <div style="align-self:end"><button type="submit">Cambiar equipos en cancha</button></div>
+    </form>
+    <p class="muted">Solo con el set en 0-0.</p>
+  </section>
+
+  <section class="card">
+    <h2>Configuración del partido</h2>
+    <form id="configForm" class="grid3">
+      <!-- Las opciones de cada lista vienen de /config/options.json -->
+      <label class="field">Puntos por set<select id="pps"></select></label>
+      <!-- Desactivado por ahora: partido abierto, sin «mejor de N» ni set decisivo.
+           Para reactivarlo, descomentar y enviar totalSets / decidingSetPoints en configForm.
+      <label class="field">Cantidad de sets (mejor de)<select id="sets"></select></label>
+      <label class="field">Puntos del set decisivo<select id="dsp"></select></label>
+      -->
+      <label class="field">Al terminar un set (con equipos en espera)<select id="rotation"></select></label>
+      <div style="align-self:end"><button type="submit">Guardar configuración</button></div>
+    </form>
+    <p class="muted">La opción de rotación es la sugerida; en el control siempre se puede elegir al confirmar el set.</p>
+  </section>
+
+  <section class="card">
+    <h2>Voz del marcador (opcional)</h2>
+    <form id="voiceForm" class="grid3">
+      <label class="field">Anunciar marcador
+        <select id="vEnabled"><option value="0">No</option><option value="1">Sí</option></select>
+      </label>
+      <label class="field">Velocidad (<span id="vRateLbl">1</span>×)
+        <input id="vRate" type="range" min="0.5" max="2" step="0.1" value="1">
+      </label>
+      <label class="field">Repeticiones<select id="vRepeat"></select></label>
+      <label class="field">Cada cuántos segundos repite
+        <input id="vInterval" type="number" min="1" max="30" step="1" value="3">
+      </label>
+      <label class="field">Idioma<select id="vLang"></select></label>
+      <div style="align-self:end" class="btns">
+        <button type="submit">Guardar voz</button>
+        <button type="button" class="alt" id="vTest">Probar aquí</button>
+      </div>
+    </form>
+    <p class="muted">Se escucha en el dispositivo del marcador. Allí hay que tocar «🔊 Activar voz» una vez (lo exige el navegador).</p>
+  </section>
+
+  <section class="card">
+    <h2>Corregir marcador</h2>
+    <form id="scoreForm">
+      <div class="grid2">
+        <label class="field"><span id="lblA">Puntos A</span><input id="ptsA" type="number" min="0" max="99" required></label>
+        <label class="field"><span id="lblB">Puntos B</span><input id="ptsB" type="number" min="0" max="99" required></label>
+      </div>
+      <h3 class="muted" style="font-size:14px;margin:14px 0 6px">Sets ganados por equipo</h3>
+      <div class="grid3" id="setRows"></div>
+      <div class="btns"><button type="submit">Aplicar corrección</button></div>
+    </form>
+    <p class="muted">El set actual se recalcula como la suma de sets + 1.</p>
+  </section>
+
+  <section class="card">
+    <h2>Acciones</h2>
+    <div class="btns">
+      <button class="alt" id="undo" type="button">↶ Deshacer última acción</button>
+      <button class="alt" id="resetSet" type="button">Reiniciar puntos del set</button>
+      <button class="danger" id="resetMatch" type="button">Restablecer marcador</button>
+      <button class="danger" id="newMatch" type="button">Nuevo partido</button>
+    </div>
+    <p class="muted">«Restablecer marcador» se puede deshacer. «Nuevo partido» borra también el historial de deshacer.</p>
+  </section>
+
+  <section class="card">
+    <h2>Historial</h2>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Salas guardadas en el servidor</h2>
+    <p class="muted">Borra las salas de prueba para que no queden guardadas. Si una sala tiene dispositivos conectados, queda en blanco.</p>
+    <ul class="log" id="rooms"></ul>
+    <div class="btns">
+      <button class="alt" id="roomsRefresh" type="button">Actualizar lista</button>
+      <button class="danger" id="deleteThis" type="button">Borrar esta sala</button>
+      <button class="danger" id="deleteAll" type="button">Borrar todas las salas</button>
+    </div>
+  </section>
+
+  <p><a href="/">← Inicio</a> · <a href="#" id="logout">Salir</a> · <a href="#" id="clearLocal">Borrar datos locales</a></p>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  let MAX_TEAMS = 6;
+  let PALETTE = [{ value: '#1e6fd9', label: 'AZUL' }, { value: '#d62f4b', label: 'ROJO' }];
+  let OPTS = null;
+  DC.options().then(o => {
+    OPTS = o;
+    MAX_TEAMS = Math.max(...o.teamCount.options.map(x => x.value));
+    PALETTE = o.teamColors;
+    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang']]) DC.fillSelect($(id), o[key]);
+    render(true);
+  });
+  $('pinRoom').textContent = 'Sala: ' + DC.room;
+  $('roomName').textContent = DC.room;
+  $('lnkScreen').href = DC.urlFor('marcador');
+  $('lnkControl').href = DC.urlFor('control');
+
+  let state = null;
+  let authed = false;
+  // El PIN se recuerda en este navegador por un máximo de 4 horas (por sala).
+  const PIN_KEY = 'pin:' + DC.room;
+  const savedPin = () => DC.local.get(PIN_KEY);
+
+  const api = DC.connect({
+    role: 'admin',
+    onState: s => {
+      const structural = !state || state.allTeams.length !== s.allTeams.length;
+      state = s;
+      render(structural);
+    },
+    onConnection: async (st, err) => {
+      DC.renderConnection($('conn'), st, err);
+      // El permiso de admin es por conexión: al reconectar se reenvía el PIN guardado.
+      if (st === 'online' && savedPin()) await auth(savedPin(), true);
+    },
+    onPresence: p => {
+      const ctl = p.controls.map(t => (t === null ? 'A+B' : t === 0 ? 'A' : 'B')).join(', ') || 'ninguno';
+      $('presence').textContent = `Conectados: marcador ${p.marcador}/1 · controles ${p.controls.length}/2 (${ctl})`;
+    },
+  });
+
+  async function auth(pin, silent) {
+    const res = await api.call('admin-auth', pin);
+    authed = res.ok;
+    if (res.ok) {
+      DC.local.set(PIN_KEY, pin);
+      $('pinView').classList.add('hidden');
+      $('adminView').classList.remove('hidden');
+      render(true);
+      loadRooms();
+    } else {
+      DC.local.remove(PIN_KEY);
+      $('pinView').classList.remove('hidden');
+      $('adminView').classList.add('hidden');
+      if (!silent || res.error !== 'PIN incorrecto') DC.toast(res.error, 'bad');
+    }
+  }
+  $('pinForm').onsubmit = e => { e.preventDefault(); auth($('pin').value); };
+  $('logout').onclick = e => { e.preventDefault(); DC.local.remove(PIN_KEY); location.reload(); };
+  $('clearLocal').onclick = e => { e.preventDefault(); if (DC.clearLocalData()) setTimeout(() => location.reload(), 600); };
+
+  // ---------- Equipos ----------
+  function teamRow(t, i) {
+    return `<div class="field team-field"><span>Equipo ${i + 1}</span>
+      <span class="team-row" style="grid-template-columns:1fr 120px 44px">
+        <input class="t-name" maxlength="20" data-fallback="EQUIPO ${i + 1}" value="${DC.esc(t.name === DC.colorLabel(PALETTE, t.color) ? '' : t.name)}">
+        ${DC.colorSelect(PALETTE, t.color)}
+        <button type="button" class="alt t-del" title="Quitar" style="padding:0">✕</button>
+      </span></div>`;
+  }
+  function readTeams() {
+    return [...document.querySelectorAll('#teamRows .team-field')].map(row => ({
+      name: row.querySelector('.t-name').value,
+      color: row.querySelector('.t-color').value,
+    }));
+  }
+  function drawTeams(list) {
+    $('teamRows').innerHTML = list.map(teamRow).join('');
+    document.querySelectorAll('.t-del').forEach(b => { b.disabled = list.length <= 2; });
+    $('addTeam').disabled = list.length >= MAX_TEAMS;
+    DC.bindColorRows($('teamRows'), PALETTE);
+  }
+  $('teamRows').addEventListener('click', e => {
+    if (!e.target.classList.contains('t-del')) return;
+    const list = readTeams();
+    list.splice([...document.querySelectorAll('.t-del')].indexOf(e.target), 1);
+    drawTeams(list);
+  });
+  $('addTeam').onclick = () => {
+    const list = readTeams();
+    // Nuevo equipo: el primer color de la paleta que no esté en uso.
+    const used = list.map(t => t.color.toLowerCase());
+    const free = PALETTE.find(c => !used.includes(c.value.toLowerCase())) || PALETTE[list.length % PALETTE.length];
+    if (list.length < MAX_TEAMS) list.push({ name: '', color: free.value });
+    drawTeams(list);
+  };
+
+  // fillForms: rellena formularios solo al entrar o si cambia la cantidad de equipos,
+  // para no pisar lo que se está editando.
+  function render(fillForms) {
+    const s = state;
+    if (!s || !authed) return;
+    const [A, B] = s.teams;
+    const phase = s.phase === 'setOver' ? ` · Set para ${s.teams[s.setWinner].name}, esperando confirmación`
+      : s.phase === 'matchOver' ? ` · Partido para ${s.teams[s.matchWinner].name}` : '';
+    $('summary').textContent = `${A.name} ${s.points[0]} – ${s.points[1]} ${B.name} · Sets ${s.sets[0]}-${s.sets[1]} · Set ${s.currentSet} a ${s.target}${phase}`;
+    $('queueInfo').textContent = s.queue.length
+      ? 'En espera: ' + s.queue.map(i => s.allTeams[i].name).join(' → ') + ' · Sets: ' + s.allTeams.map((t, i) => `${t.name} ${s.teamSets[i]}`).join(', ')
+      : '';
+    $('lblA').textContent = 'Puntos ' + A.name + ' (izq.)';
+    $('lblB').textContent = 'Puntos ' + B.name + ' (der.)';
+    $('undo').disabled = !s.canUndo;
+    $('undo').title = s.lastUndo ? 'Revierte: ' + s.lastUndo : '';
+    $('log').innerHTML = s.log.slice().reverse().map(l =>
+      `<li><time>${new Date(l.ts).toLocaleTimeString()}</time><span>${DC.esc(l.text)}</span><span class="by">${DC.esc(l.by)}</span></li>`).join('') || '<li class="muted">Sin acciones todavía</li>';
+    $('courtCard').classList.toggle('hidden', s.allTeams.length < 3);
+    if (fillForms) {
+      drawTeams(s.allTeams);
+      const opts = s.allTeams.map((t, i) => `<option value="${i}">${DC.esc(t.name)}</option>`).join('');
+      $('courtA').innerHTML = opts; $('courtB').innerHTML = opts;
+      $('courtA').value = s.court[0]; $('courtB').value = s.court[1];
+      $('pps').value = s.config.pointsPerSet;
+      $('rotation').value = s.config.rotation;
+      const v = s.voice;
+      $('vEnabled').value = v.enabled ? '1' : '0'; $('vRate').value = v.rate; $('vRateLbl').textContent = v.rate;
+      $('vRepeat').value = v.repeat; $('vInterval').value = v.interval; $('vLang').value = v.lang;
+    }
+    if (fillForms || !document.activeElement?.closest?.('#scoreForm')) {
+      $('ptsA').value = s.points[0]; $('ptsB').value = s.points[1];
+      $('setRows').innerHTML = s.allTeams.map((t, i) =>
+        `<label class="field">${DC.esc(t.name)}<input class="set-in" type="number" min="0" max="${s.rotationMode ? 99 : s.setsToWin}" value="${s.teamSets[i]}" required></label>`).join('');
+    }
+  }
+
+  async function run(cmd, okText) {
+    const res = await api.send(cmd);
+    if (res.ok) { DC.toast(okText || 'Listo', 'good'); render(true); }
+    else {
+      DC.toast(res.error, 'bad');
+      if (/PIN/.test(res.error)) auth(savedPin() || '', true);
+    }
+  }
+  const num = id => Number($(id).value);
+
+  $('teamsForm').onsubmit = e => { e.preventDefault(); run({ type: 'setTeams', teams: readTeams() }, 'Equipos guardados'); };
+  $('courtForm').onsubmit = e => { e.preventDefault(); run({ type: 'setCourt', court: [num('courtA'), num('courtB')] }, 'Equipos en cancha actualizados'); };
+  $('configForm').onsubmit = e => {
+    e.preventDefault();
+    // totalSets 0 = partido abierto (sin «mejor de N»), ver config/options.json.
+    run({ type: 'setConfig', pointsPerSet: num('pps'), totalSets: 0, rotation: $('rotation').value }, 'Configuración guardada');
+  };
+  const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value });
+  $('vRate').oninput = () => { $('vRateLbl').textContent = $('vRate').value; };
+  $('voiceForm').onsubmit = e => { e.preventDefault(); run({ type: 'setVoice', voice: voiceCfg() }, 'Voz guardada'); };
+  $('vTest').onclick = () => {
+    if (!state) return;
+    const [A, B] = state.teams;
+    if (!DC.speak(`${A.name}: ${state.points[0]}. ${B.name}: ${state.points[1]}.`, voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
+  };
+  $('scoreForm').onsubmit = async e => {
+    e.preventDefault();
+    if (!await DC.confirmModal({ title: 'Corregir marcador', text: '¿Aplicar la corrección del marcador? Se puede deshacer.', confirmLabel: 'Aplicar' })) return;
+    const teamSets = [...document.querySelectorAll('#setRows .set-in')].map(i => Number(i.value));
+    run({ type: 'setScore', points: [num('ptsA'), num('ptsB')], teamSets }, 'Marcador corregido');
+  };
+  $('undo').onclick = () => run({ type: 'undo' }, 'Acción deshecha');
+  $('resetSet').onclick = async () => {
+    if (await DC.confirmModal({ title: 'Reiniciar set', text: '¿Poner en 0 los puntos del set actual?', confirmLabel: 'Reiniciar set' })) run({ type: 'resetSet' }, 'Set reiniciado');
+  };
+  $('resetMatch').onclick = async () => {
+    if (await DC.confirmModal({ title: 'Restablecer marcador', text: 'Puntos y sets vuelven a 0. Se puede deshacer.', confirmLabel: 'Restablecer', danger: true })) run({ type: 'resetMatch' }, 'Marcador restablecido');
+  };
+  $('newMatch').onclick = async () => {
+    if (await DC.confirmModal({ title: 'Nuevo partido', text: 'Se borra el marcador y el historial de deshacer. Se conservan equipos y configuración.', confirmLabel: 'Nuevo partido', danger: true })) run({ type: 'newMatch' }, 'Nuevo partido iniciado');
+  };
+
+  // ---------- Salas guardadas ----------
+  async function loadRooms() {
+    const res = await api.call('admin-rooms');
+    if (!res.ok) { $('rooms').innerHTML = `<li class="muted">${DC.esc(res.error)}</li>`; return; }
+    $('rooms').innerHTML = res.rooms.map(r => `<li>
+        <span><b>${DC.esc(r.room)}</b>${r.room === DC.room ? ' (esta)' : ''} · ${DC.esc(r.teams.join(' / '))} · ${r.points.join('-')} set ${r.currentSet}</span>
+        <span class="by">${new Date(r.updatedAt).toLocaleString()} · ${r.connected} conect.</span>
+        <button class="alt" type="button" data-del="${DC.esc(r.room)}" style="padding:4px 10px;font-size:13px">Borrar</button>
+      </li>`).join('') || '<li class="muted">No hay salas guardadas</li>';
+  }
+  async function deleteRoom(room) {
+    const ok = await DC.confirmModal({
+      title: `Borrar sala «${room}»`,
+      text: 'Se elimina su marcador, equipos, configuración e historial del servidor. No se puede deshacer.',
+      confirmLabel: 'Borrar sala', danger: true,
+    });
+    if (!ok) return;
+    const res = await api.call('admin-delete-room', room);
+    DC.toast(res.ok ? `Sala «${room}» borrada` : res.error, res.ok ? 'good' : 'bad');
+    loadRooms();
+  }
+  $('rooms').addEventListener('click', e => { if (e.target.dataset.del) deleteRoom(e.target.dataset.del); });
+  $('roomsRefresh').onclick = loadRooms;
+  $('deleteThis').onclick = () => deleteRoom(DC.room);
+  $('deleteAll').onclick = async () => {
+    const ok = await DC.confirmModal({
+      title: 'Borrar TODAS las salas',
+      text: 'Se eliminan todas las salas guardadas en el servidor (incluida esta). No se puede deshacer.',
+      confirmLabel: 'Borrar todo', danger: true, requireText: 'BORRAR',
+    });
+    if (!ok) return;
+    const res = await api.call('admin-delete-all');
+    DC.toast(res.ok ? `${res.deleted} sala(s) borrada(s)` : res.error, res.ok ? 'good' : 'bad');
+    loadRooms();
+  };
+</script>
+</body>
+</html>

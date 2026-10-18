@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#131b2c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Control · DC Sport Score</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="controller">
+<div class="offline-banner">Sin conexión · los toques no se envían</div>
+<div class="ctl">
+  <div class="ctl-bar">
+    <span class="conn" id="conn" data-status="connecting">Conectando…</span>
+    <span class="info" id="info">Sala</span>
+    <button class="alt" id="undo" type="button">↶ Deshacer</button>
+    <button class="alt" id="menuBtn" type="button">☰</button>
+  </div>
+  <div class="rotate-hint">Gira el celular a horizontal para mayor comodidad</div>
+  <div class="ctl-pads">
+    <div class="pad" data-team="0" style="--c: var(--team-a)" role="button" aria-label="Equipo A">
+      <div class="name" id="name0">EQUIPO 1</div>
+      <div class="score" id="score0">0</div>
+      <div class="sets">Sets <span id="sets0">0</span></div>
+      <div class="hint">1 toque +1 · 2 toques −1</div>
+      <div class="fx" id="fx0"></div>
+    </div>
+    <div class="pad" data-team="1" style="--c: var(--team-b)" role="button" aria-label="Equipo B">
+      <div class="name" id="name1">EQUIPO 2</div>
+      <div class="score" id="score1">0</div>
+      <div class="sets">Sets <span id="sets1">0</span></div>
+      <div class="hint">1 toque +1 · 2 toques −1</div>
+      <div class="fx" id="fx1"></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="setOver">
+  <div class="box">
+    <h2 id="soTitle">Set terminado</h2>
+    <p class="muted" id="soText"></p>
+    <div class="row" id="soButtons"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="menu">
+  <div class="box">
+    <h2>Opciones</h2>
+    <div class="row">
+      <button class="alt" id="mUndo" type="button">↶ Deshacer</button>
+      <button class="alt" id="mResetSet" type="button">Reiniciar set</button>
+      <button class="danger" id="mResetMatch" type="button">Reiniciar partido</button>
+    </div>
+    <div class="menu-grid">
+      <label>Puntos por set (con el set en 0-0)
+        <select id="target"></select>
+      </label>
+      <label>Ventana de doble toque
+        <select id="dt"></select>
+      </label>
+    </div>
+    <p class="muted" id="lastUndo"></p>
+    <div class="row">
+      <button class="alt" id="mFs" type="button">Pantalla completa</button>
+      <a class="muted" id="lnkScreen" target="_blank">Marcador</a>
+      <a class="muted" id="lnkAdmin">Admin</a>
+      <button class="alt" id="mClear" type="button">Borrar datos locales</button>
+    </div>
+    <div class="row"><button id="mClose" type="button">Cerrar</button></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+
+  // Ventana para distinguir toque simple de doble (ms). Configurable con ?dt=, o en el menú.
+  const DEFAULT_DOUBLE_TAP_MS = 350;
+  const readDt = () => {
+    const q = Number(DC.params.get('dt'));
+    if (q >= 150 && q <= 1000) return q;
+    const v = Number(DC.local.get('dt'));
+    if (v >= 150 && v <= 1000) return v;
+    return DEFAULT_DOUBLE_TAP_MS;
+  };
+  let doubleTapMs = readDt();
+  const COOLDOWN_AFTER_SET_MS = 900; // bloqueo tras confirmar un nuevo set
+
+  let state = null;
+  let online = false;
+  let cooldownUntil = 0;
+  const pending = [null, null]; // { timer, set } por equipo
+
+  // Control de un solo equipo (?equipo=a|b): una sola zona a pantalla completa, como un pulsador.
+  if (DC.team !== null) {
+    document.querySelector(`.pad[data-team="${1 - DC.team}"]`).remove();
+    document.querySelector('.ctl-pads').style.gridTemplateColumns = '1fr';
+  }
+
+  const api = DC.connect({
+    role: 'control',
+    team: DC.team,
+    onState: s => {
+      const prev = state;
+      state = s;
+      // Cambio de set o de fase: se cancelan toques pendientes (no deben aplicarse al nuevo set).
+      if (prev && (prev.currentSet !== s.currentSet || prev.phase !== s.phase)) {
+        if (cancelPending()) DC.toast('Toque pendiente cancelado por cambio de set');
+        if (prev.phase !== 'playing' && s.phase === 'playing') cooldownUntil = Date.now() + COOLDOWN_AFTER_SET_MS;
+      }
+      render();
+    },
+    onConnection: (st, err) => {
+      online = st === 'online';
+      if (!online) cancelPending();
+      DC.renderConnection($('conn'), st, err);
+    },
+  });
+
+  function render() {
+    const s = state;
+    if (!s) return;
+    for (const t of [0, 1]) {
+      const pad = padOf(t);
+      if (!pad) continue;
+      pad.style.setProperty('--c', s.teams[t].color);
+      $('name' + t).textContent = s.teams[t].name;
+      $('score' + t).textContent = s.points[t];
+      $('sets' + t).textContent = s.sets[t];
+    }
+    const mine = DC.team === null ? '' : ` · control ${s.teams[DC.team].name}`;
+    const waiting = s.nextIn !== null ? ` · espera ${s.allTeams[s.nextIn].name}` : '';
+    $('info').textContent = `${s.points[0]}-${s.points[1]} · Set ${s.currentSet} (${s.sets[0]}-${s.sets[1]}) · a ${s.target}${s.decidingSet ? ' decisivo' : ''}${waiting} · ${DC.room}${mine}`;
+    $('undo').disabled = !s.canUndo;
+    $('mUndo').disabled = !s.canUndo;
+    $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
+    $('target').value = s.config.pointsPerSet;
+    $('target').disabled = s.points.some(v => v !== 0);
+    document.body.classList.toggle('locked', s.phase !== 'playing');
+
+    const ov = $('setOver');
+    if (s.phase === 'playing') { ov.classList.add('hidden'); return; }
+    const last = s.setResults[s.setResults.length - 1];
+    const score = last ? `${last.points[0]}-${last.points[1]}` : '';
+    if (s.phase === 'setOver') {
+      const winner = s.teams[s.setWinner].name;
+      const loser = s.teams[1 - s.setWinner].name;
+      $('soTitle').textContent = `Set ${s.currentSet} para ${winner}`;
+      $('soText').textContent = `Resultado ${score} · Sets ${s.sets[0]}-${s.sets[1]}. Confirma para comenzar el set ${s.currentSet + 1}.`;
+      let buttons;
+      if (s.nextIn !== null) {
+        // Hay equipos en espera: elegir rotar (entra el siguiente por el perdedor) o seguir igual.
+        const rotateBtn = `<button class="ok" data-act="next" data-rotate="1">Entra ${DC.esc(s.allTeams[s.nextIn].name)} (sale ${DC.esc(loser)})</button>`;
+        const sameBtn = `<button class="${s.config.rotation === 'none' ? 'ok' : 'alt'}" data-act="next" data-rotate="0">Mismos equipos</button>`;
+        buttons = s.config.rotation === 'none' ? sameBtn + rotateBtn.replace('class="ok"', 'class="alt"') : rotateBtn + sameBtn;
+      } else {
+        buttons = `<button class="ok" data-act="next">Comenzar set ${s.currentSet + 1}</button>`;
+      }
+      $('soButtons').innerHTML = buttons + `<button class="alt" data-act="undo">Deshacer último punto</button>`;
+    } else {
+      $('soTitle').textContent = `¡${s.teams[s.matchWinner].name} gana el partido!`;
+      $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}`;
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">Deshacer último punto</button><button class="danger" data-act="reset">Nuevo partido</button>`;
+    }
+    ov.classList.remove('hidden');
+  }
+
+  // ---------- Toques ----------
+  function cancelPending() {
+    let any = false;
+    for (const t of [0, 1]) if (pending[t]) {
+      clearTimeout(pending[t].timer);
+      pending[t] = null;
+      padOf(t)?.classList.remove('pending');
+      any = true;
+    }
+    return any;
+  }
+  const padOf = t => document.querySelector(`.pad[data-team="${t}"]`);
+
+  function flash(t, kind, text) {
+    const pad = padOf(t);
+    $('fx' + t).textContent = text || '';
+    pad.classList.remove('flash-plus', 'flash-minus', 'flash-error');
+    void pad.offsetWidth;
+    pad.classList.add('flash-' + kind);
+    if (navigator.vibrate) navigator.vibrate(kind === 'error' ? [40, 40, 40] : kind === 'minus' ? [20, 30, 20] : 25);
+  }
+
+  async function sendPoint(t, delta, set) {
+    const res = await api.send({ type: 'point', team: t, delta, set });
+    if (res.ok) flash(t, delta > 0 ? 'plus' : 'minus', delta > 0 ? '+1' : '−1');
+    else { flash(t, 'error', '✕'); DC.toast(res.error, 'bad'); }
+  }
+
+  function onTap(t) {
+    if (!state || !online) { flash(t, 'error', '✕'); DC.toast('Sin conexión con el servidor', 'bad'); return; }
+    if (state.phase !== 'playing') { flash(t, 'error', '✕'); return; }
+    if (Date.now() < cooldownUntil) return; // toques residuales justo después de cambiar de set
+    const p = pending[t];
+    if (p) {
+      // Segundo toque dentro de la ventana: es una resta. El +1 nunca se envió.
+      clearTimeout(p.timer);
+      pending[t] = null;
+      padOf(t).classList.remove('pending');
+      sendPoint(t, -1, p.set);
+      return;
+    }
+    // Primer toque: esperar a saber si llega un segundo antes de sumar.
+    const set = state.currentSet;
+    $('fx' + t).textContent = '…';
+    padOf(t).classList.add('pending');
+    pending[t] = {
+      set,
+      timer: setTimeout(() => {
+        pending[t] = null;
+        padOf(t).classList.remove('pending');
+        sendPoint(t, 1, set);
+      }, doubleTapMs),
+    };
+  }
+
+  document.querySelectorAll('.pad').forEach(pad => {
+    const t = Number(pad.dataset.team);
+    pad.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || !e.isPrimary && e.pointerType !== 'mouse') return;
+      e.preventDefault();
+      onTap(t);
+    });
+    // Evita clics sintéticos, zoom y menú contextual sobre las zonas táctiles.
+    pad.addEventListener('touchend', e => e.preventDefault(), { passive: false });
+    pad.addEventListener('contextmenu', e => e.preventDefault());
+  });
+  document.addEventListener('dblclick', e => e.preventDefault());
+  document.addEventListener('gesturestart', e => e.preventDefault());
+
+  // ---------- Acciones ----------
+  async function run(cmd, okText) {
+    const res = await api.send(cmd);
+    if (res.ok) { if (okText) DC.toast(okText, 'good'); }
+    else DC.toast(res.error, 'bad');
+    return res;
+  }
+  const undo = () => { cancelPending(); return run({ type: 'undo' }, 'Acción deshecha'); };
+  const resetMatch = () => { if (confirm('¿Reiniciar el partido completo? Se ponen en 0 puntos y sets de ambos equipos.')) run({ type: 'resetMatch' }, 'Partido reiniciado'); };
+  const closeMenu = () => $('menu').classList.add('hidden');
+
+  $('undo').onclick = undo;
+  $('soButtons').addEventListener('click', e => {
+    const act = e.target.dataset.act;
+    if (act === 'next') {
+      // Evita doble confirmación; además el servidor ignora un nextSet de un set ya cerrado.
+      $('soButtons').querySelectorAll('button').forEach(b => { b.disabled = true; });
+      const cmd = { type: 'nextSet', set: state.currentSet };
+      if (e.target.dataset.rotate !== undefined) cmd.rotate = e.target.dataset.rotate === '1';
+      run(cmd).then(res => { if (!res.ok) render(); });
+    } else if (act === 'undo') undo();
+    else if (act === 'reset') resetMatch();
+  });
+  $('menuBtn').onclick = () => $('menu').classList.remove('hidden');
+  $('mClose').onclick = closeMenu;
+  $('mUndo').onclick = () => { undo(); closeMenu(); };
+  $('mResetSet').onclick = () => { if (confirm('¿Poner en 0 los puntos del set actual?')) { run({ type: 'resetSet' }, 'Set reiniciado'); closeMenu(); } };
+  $('mResetMatch').onclick = () => { resetMatch(); closeMenu(); };
+  $('target').onchange = e => run({ type: 'target', target: Number(e.target.value) }, 'Puntos por set actualizados');
+  // Listas desde /config/options.json
+  DC.options().then(o => {
+    DC.fillSelect($('target'), o.pointsPerSet, state && state.config.pointsPerSet);
+    DC.fillSelect($('dt'), o.doubleTapMs, doubleTapMs);
+    // Si el valor guardado no está en la lista, se agrega para no perderlo.
+    if ($('dt').value !== String(doubleTapMs)) { $('dt').insertAdjacentHTML('beforeend', `<option value="${doubleTapMs}">${doubleTapMs} ms</option>`); $('dt').value = String(doubleTapMs); }
+    render();
+  });
+  $('dt').onchange = e => {
+    doubleTapMs = Number(e.target.value);
+    DC.local.set('dt', doubleTapMs);
+    DC.toast(`Doble toque: ${doubleTapMs} ms`);
+  };
+  $('mFs').onclick = () => {
+    const el = document.documentElement;
+    (document.fullscreenElement ? document.exitFullscreen() : (el.requestFullscreen || el.webkitRequestFullscreen || (() => Promise.reject())).call(el))
+      .catch?.(() => DC.toast('Pantalla completa no disponible en este navegador', 'bad'));
+    closeMenu();
+  };
+  $('lnkScreen').href = DC.urlFor('marcador');
+  $('lnkAdmin').href = DC.urlFor('admin');
+  $('mClear').onclick = () => { if (DC.clearLocalData()) { doubleTapMs = DEFAULT_DOUBLE_TAP_MS; $('dt').value = String(doubleTapMs); } };
+</script>
+</body>
+</html>

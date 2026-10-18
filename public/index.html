@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DC Sport Score Beta</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<main class="landing">
+  <h1>DC SPORT SCORE</h1>
+  <p class="muted">Marcador multiequipo · Beta de voleibol</p>
+  <p>Usa el mismo código de sala en todos los dispositivos.</p>
+  <input id="room" value="voley" maxlength="24" aria-label="Código de sala" autocapitalize="off" autocomplete="off" spellcheck="false">
+  <div class="actions">
+    <a id="screen">Abrir marcador</a>
+    <a id="remote">Abrir control</a>
+    <a id="admin" class="alt">Administración</a>
+  </div>
+  <p class="muted">Por sala: 1 marcador (PC/TV) y hasta 2 controles (celulares). Cada control puede manejar un lado (A o B) o ambos. Los dispositivos pueden estar en redes distintas si el servidor es público (ngrok, Render).</p>
+
+  <!-- Aviso visible cuando la sala ya existe / se acaba de crear -->
+  <section class="ready hidden" id="ready">
+    <h2 id="readyTitle">✓ Tablero listo</h2>
+    <p id="readyText" class="muted"></p>
+    <div class="actions">
+      <a id="readyScreen">Abrir marcador</a>
+      <a id="readyRemote">Abrir control</a>
+    </div>
+  </section>
+
+  <details class="share setup" id="setupBox" open>
+    <summary id="setupSummary">Crear tablero</summary>
+    <form id="setupForm">
+      <div class="grid3">
+        <!-- Las opciones de cada lista vienen de /config/options.json -->
+        <label class="field">Cantidad de equipos<select id="count"></select></label>
+        <label class="field">Puntos por set<select id="pps"></select></label>
+        <!-- «Partido a (mejor de N)» desactivado por ahora: el partido es abierto y se cuentan sets
+             sin fin automático. Para reactivarlo, descomentar y enviar totalSets en createBoard().
+        <label class="field" id="setsField">Partido a (mejor de)<select id="sets"></select></label>
+        -->
+        <label class="field hidden" id="rotationField">Al terminar cada set<select id="rotation"></select></label>
+      </div>
+      <h3 class="muted" style="font-size:14px;margin:14px 0 6px">Equipos · nombre opcional: si lo dejas vacío toma el nombre del color</h3>
+      <div id="teamRows" class="grid2"></div>
+      <label class="check" style="display:flex;gap:8px;align-items:center;margin-top:12px">
+        <input type="checkbox" id="voice"> 🔊 Anunciar el marcador por voz en la pantalla del marcador
+      </label>
+      <p class="muted" style="margin:4px 0 0;font-size:13px">Velocidad, repeticiones e intervalo se ajustan en Administración. En el marcador hay que tocar «Activar voz» una vez.</p>
+      <div class="btns"><button type="submit">Crear tablero</button></div>
+      <p class="muted" id="setupNote">Si la sala ya tiene un marcador en curso se pedirá el PIN de administración.</p>
+    </form>
+  </details>
+
+  <section class="share">
+    <h2>Compartir enlaces</h2>
+    <div id="links"></div>
+    <p class="muted" id="lan-note"></p>
+  </section>
+
+  <p class="muted" style="margin-top:24px">Este navegador recuerda la sala y los ajustes por un máximo de 4 horas.
+    <button class="alt" type="button" id="clearLocal" style="padding:6px 10px;font-size:13px">Borrar datos</button></p>
+</main>
+<script src="/js/common.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const input = $('room');
+  let PALETTE = [{ value: '#1e6fd9', label: 'AZUL' }, { value: '#d62f4b', label: 'ROJO' }];
+  const fromUrl = DC.cleanRoom(DC.params.get('sala') || '');
+  input.value = fromUrl || DC.local.get('room') || 'voley';
+  let lanBase = null;
+
+  const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+  const views = [
+    ['marcador', 'Marcador'],
+    ['control', 'Control A', '&equipo=a'],
+    ['control', 'Control B', '&equipo=b'],
+    ['control', 'Control A+B'],
+    ['admin', 'Admin'],
+  ];
+  const currentRoom = () => { const r = DC.cleanRoom(input.value); return r.length >= 3 ? r : 'voley'; };
+
+  function render() {
+    const r = currentRoom();
+    const q = '?sala=' + encodeURIComponent(r);
+    $('screen').href = '/marcador' + q;
+    $('remote').href = '/control' + q;
+    $('admin').href = '/admin' + q;
+    $('readyScreen').href = '/marcador' + q;
+    $('readyRemote').href = '/control' + q;
+    // Desde localhost los enlaces a compartir usan la IP local; desde ngrok/Render, el dominio actual.
+    const base = isLocal && lanBase ? lanBase : location.origin;
+    $('links').innerHTML = views.map(([v, label, extra]) => {
+      const url = `${base}/${v}${q}${extra || ''}`;
+      return `<div class="share-row"><span>${label}</span><code>${url}</code><button type="button" data-url="${url}">Copiar</button></div>`;
+    }).join('');
+  }
+
+  $('links').addEventListener('click', async e => {
+    const url = e.target.dataset && e.target.dataset.url;
+    if (!url) return;
+    try {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'DC Sport Score', url });
+      else { await navigator.clipboard.writeText(url); e.target.textContent = 'Copiado'; setTimeout(render, 1200); }
+    } catch { prompt('Copia el enlace:', url); }
+  });
+  let checkTimer = null;
+  input.addEventListener('input', () => {
+    DC.local.set('room', currentRoom());
+    render();
+    $('ready').classList.add('hidden'); // el aviso de la sala anterior ya no aplica
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(checkRoom, 400);
+  });
+
+  // ¿La sala ya existe? Si existe, se pliega «Crear tablero» y se destacan los botones de abrir.
+  function showReady(st, justCreated) {
+    const r = currentRoom();
+    const names = st.allTeams.map(t => t.name).join(', ');
+    $('readyTitle').textContent = justCreated ? `✓ Tablero «${r}» creado` : `Sala «${r}» lista`;
+    $('readyText').textContent = `${st.allTeams.length} equipos: ${names} · sets a ${st.config.pointsPerSet}`
+      + (justCreated ? '' : ` · marcador actual ${st.points[0]}-${st.points[1]}, set ${st.currentSet}`)
+      + '. Ahora abre el marcador en la pantalla y el control en el celular.';
+    $('ready').classList.remove('hidden');
+    $('setupBox').open = false;
+    $('setupSummary').textContent = 'Reconfigurar tablero (equipos, puntos)';
+  }
+  function showSetup() {
+    $('ready').classList.add('hidden');
+    $('setupBox').open = true;
+    $('setupSummary').textContent = 'Crear tablero';
+  }
+  async function checkRoom() {
+    const asked = currentRoom();
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(asked)}`, { headers: { 'ngrok-skip-browser-warning': '1' } });
+      if (asked !== currentRoom()) return; // respuesta de una sala que ya no está escrita
+      if (res.ok) showReady(await res.json(), false); else showSetup();
+    } catch { if (asked === currentRoom()) showSetup(); }
+  }
+
+  // ---------- Crear tablero ----------
+  // El borrador (cantidad, nombres, colores) se recuerda máx. 4 h en este navegador.
+  const draft = DC.local.get('setup') || {};
+  function readRows() {
+    return [...document.querySelectorAll('#teamRows .team-field')].map(row => ({
+      name: row.querySelector('.t-name').value.trim(),
+      color: row.querySelector('.t-color').value,
+    }));
+  }
+  function drawRows(n, keep) {
+    const prev = keep || readRows();
+    $('teamRows').innerHTML = Array.from({ length: n }, (_, i) => {
+      const t = prev[i] || {};
+      const color = t.color || PALETTE[i % PALETTE.length].value;
+      return `<div class="field team-field"><span>Equipo ${i + 1}</span>
+        <span class="team-row"><input class="t-name" maxlength="20" data-fallback="EQUIPO ${i + 1}" value="${DC.esc(t.name || '')}">
+        ${DC.colorSelect(PALETTE, color)}</span></div>`;
+    }).join('');
+    DC.bindColorRows($('teamRows'), PALETTE);
+    // La rotación solo aplica con 3 o más equipos.
+    $('rotationField').classList.toggle('hidden', n <= 2);
+  }
+  function saveDraft() {
+    DC.local.set('setup', { count: Number($('count').value), teams: readRows(), pps: $('pps').value, rotation: $('rotation').value, voice: $('voice').checked });
+  }
+  DC.options().then(o => {
+    PALETTE = o.teamColors;
+    DC.fillSelect($('count'), o.teamCount, draft.count);
+    DC.fillSelect($('pps'), o.pointsPerSet, draft.pps);
+    DC.fillSelect($('rotation'), o.rotation, draft.rotation);
+    drawRows(Number($('count').value), draft.teams || []);
+  });
+  $('voice').checked = !!draft.voice;
+  $('count').onchange = () => { drawRows(Number($('count').value)); saveDraft(); };
+  $('setupForm').addEventListener('input', saveDraft);
+  $('setupForm').addEventListener('change', saveDraft);
+
+  async function createBoard(pin) {
+    const r = currentRoom();
+    const body = {
+      teams: readRows(),
+      pointsPerSet: Number($('pps').value),
+      rotation: $('rotation').value,
+      voice: { enabled: $('voice').checked },
+      pin,
+    };
+    let res;
+    try {
+      res = await fetch(`/api/rooms/${encodeURIComponent(r)}/setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+        body: JSON.stringify(body),
+      }).then(x => x.json());
+    } catch { DC.toast('No se pudo contactar al servidor', 'bad'); return; }
+    if (res.ok) {
+      DC.toast(`Tablero «${r}» creado`, 'good');
+      render();
+      showReady(res.state, true);
+      $('ready').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (res.needPin) {
+      const p = prompt(res.error + '\n\nPIN de administración:');
+      if (p) createBoard(p);
+      return;
+    }
+    DC.toast(res.error || 'No se pudo crear el tablero', 'bad');
+  }
+  $('setupForm').onsubmit = e => { e.preventDefault(); createBoard(); };
+
+  // Borrar datos: este navegador y, opcionalmente, la sala en el servidor (con PIN).
+  function clearModal(room, exists) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'overlay';
+      ov.innerHTML = `<div class="box" role="dialog" aria-modal="true" style="text-align:left">
+        <h2 style="text-align:center">Borrar datos</h2>
+        <p class="muted">Se borra lo guardado en este navegador: sala, borrador del tablero, PIN, ajustes y caché.</p>
+        ${exists ? `<label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0">
+          <input type="checkbox" id="mServer" checked style="margin-top:4px">
+          <span>Borrar también la sala <b>«${DC.esc(room)}»</b> del servidor (marcador, equipos e historial). No se puede deshacer.</span>
+        </label>
+        <input id="mPin" type="password" inputmode="numeric" placeholder="PIN de administración" autocomplete="off"
+          style="padding:10px;border-radius:10px;border:1px solid var(--line);background:#0c1220;color:var(--text);width:100%;font-size:18px;text-align:center">
+        <p class="muted" id="mErr" style="color:var(--bad);min-height:1.2em;margin:6px 0 0"></p>` : `<p class="muted">La sala «${DC.esc(room)}» no existe en el servidor.</p>`}
+        <div class="row"><button class="alt" data-r="0">Cancelar</button><button class="danger" data-r="1">Borrar</button></div></div>`;
+      document.body.appendChild(ov);
+      const chk = ov.querySelector('#mServer');
+      const pin = ov.querySelector('#mPin');
+      if (chk) chk.onchange = () => { pin.classList.toggle('hidden', !chk.checked); };
+      if (pin) setTimeout(() => pin.focus(), 50);
+      const close = v => { ov.remove(); resolve(v); };
+      ov.addEventListener('click', async e => {
+        if (e.target === ov || e.target.dataset.r === '0') return close(false);
+        if (e.target.dataset.r !== '1') return;
+        if (chk && chk.checked) {
+          e.target.disabled = true;
+          const res = await fetch(`/api/rooms/${encodeURIComponent(room)}`, {
+            method: 'DELETE', headers: { 'x-admin-pin': pin.value, 'ngrok-skip-browser-warning': '1' },
+          }).then(r => r.json()).catch(() => ({ ok: false, error: 'No se pudo contactar al servidor' }));
+          e.target.disabled = false;
+          if (!res.ok) { ov.querySelector('#mErr').textContent = res.error; return; } // el modal sigue abierto
+        }
+        close(true);
+      });
+    });
+  }
+
+  $('clearLocal').onclick = async () => {
+    const room = currentRoom();
+    const exists = await fetch(`/api/rooms/${encodeURIComponent(room)}`, { headers: { 'ngrok-skip-browser-warning': '1' } })
+      .then(r => r.ok).catch(() => false);
+    if (!await clearModal(room, exists)) return;
+    DC.local.clear();
+    DC.toast(exists ? 'Datos borrados (navegador y servidor)' : 'Datos locales borrados', 'good');
+    input.value = 'voley';
+    DC.options().then(o => {
+      DC.fillSelect($('count'), o.teamCount);
+      DC.fillSelect($('pps'), o.pointsPerSet);
+      DC.fillSelect($('rotation'), o.rotation);
+      drawRows(Number($('count').value), []);
+    });
+    $('voice').checked = false;
+    render();
+    checkRoom();
+  };
+
+  render();
+  checkRoom();
+  if (isLocal) {
+    fetch('/api/info').then(r => r.json()).then(info => {
+      if (info.ips && info.ips.length) {
+        lanBase = `http://${info.ips[0]}:${location.port || info.port}`;
+        $('lan-note').textContent =
+          `Estás en localhost: los enlaces usan la IP local (${info.ips.join(', ')}) y solo sirven en la misma Wi‑Fi. Para dispositivos en otras redes, abre esta página desde tu URL de ngrok y comparte esos enlaces.`;
+        render();
+      }
+    }).catch(() => {});
+  }
+</script>
+</body>
+</html>

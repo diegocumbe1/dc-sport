@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080b12">
+<title>Marcador · DC Sport Score</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="scoreboard">
+<div class="offline-banner">Conexión perdida · el marcador puede no estar actualizado</div>
+<div class="sb">
+  <div class="sb-top">
+    <span class="brand">DC SPORT SCORE</span>
+    <div class="right">
+      <span class="muted" id="room"></span>
+      <span class="muted" id="presence"></span>
+      <span class="conn" id="conn" data-status="connecting">Conectando…</span>
+      <button class="alt" id="voiceBtn" type="button">🔇 Voz</button>
+      <button class="alt" id="fs" type="button">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="sb-teams">
+    <section class="sb-team" id="team0" style="--c: var(--team-a)">
+      <div class="name" id="name0">EQUIPO 1</div>
+      <div class="score" id="score0">0</div>
+      <div class="sets">SETS <b id="sets0">0</b></div>
+    </section>
+    <div class="sb-mid">
+      <div class="set-label">Set</div>
+      <div class="set-num" id="setnum">1</div>
+      <div class="target" id="target">a 25</div>
+    </div>
+    <section class="sb-team" id="team1" style="--c: var(--team-b)">
+      <div class="name" id="name1">EQUIPO 2</div>
+      <div class="score" id="score1">0</div>
+      <div class="sets">SETS <b id="sets1">0</b></div>
+    </section>
+  </div>
+  <div class="sb-bottom" id="bottom"></div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  $('room').textContent = 'Sala: ' + DC.room;
+  let last = null;
+
+  function render(s) {
+    for (const t of [0, 1]) {
+      const team = $('team' + t);
+      team.style.setProperty('--c', s.teams[t].color);
+      $('name' + t).textContent = s.teams[t].name;
+      if (last && last.points[t] !== s.points[t]) {
+        team.classList.remove('bump'); void team.offsetWidth; team.classList.add('bump');
+      }
+      $('score' + t).textContent = s.points[t];
+      $('sets' + t).textContent = s.sets[t];
+      const won = s.phase === 'matchOver' ? s.matchWinner === t : s.phase === 'setOver' && s.setWinner === t;
+      team.classList.toggle('winner', won);
+    }
+    $('setnum').textContent = s.currentSet;
+    $('target').textContent = s.rotationMode ? `a ${s.target} · rotación`
+      : s.openMatch ? `a ${s.target}`
+      : `a ${s.target}${s.decidingSet ? ' · decisivo' : ''} · mejor de ${s.config.totalSets}`;
+
+    // Con rotación se muestran los nombres en cada set (los equipos cambian) y la cola de espera.
+    const recent = s.rotationMode ? s.setResults.slice(-4) : s.setResults;
+    const chips = recent.map(r => s.rotationMode && r.teams
+      ? `<span class="chip">S${r.set}: ${DC.esc(s.allTeams[r.teams[0]]?.name || '?')} ${r.points[0]}-${r.points[1]} ${DC.esc(s.allTeams[r.teams[1]]?.name || '?')}</span>`
+      : `<span class="chip">S${r.set}: ${r.points[0]}-${r.points[1]}</span>`);
+    if (s.queue.length) {
+      chips.push(`<span class="chip">En espera: ${s.queue.map(i => `${DC.esc(s.allTeams[i].name)} (${s.teamSets[i]})`).join(' · ')}</span>`);
+    }
+    let status = '';
+    if (s.phase === 'setOver') status = `<span class="sb-status won">SET ${s.currentSet} PARA ${DC.esc(s.teams[s.setWinner].name)}</span>`;
+    else if (s.phase === 'matchOver') status = `<span class="sb-status won">¡${DC.esc(s.teams[s.matchWinner].name)} GANA EL PARTIDO!</span>`;
+    else {
+      const [a, b] = s.points;
+      const lead = Math.max(a, b);
+      if (lead >= s.target - 1 && a !== b) status = `<span class="sb-status">PUNTO DE SET · ${DC.esc(s.teams[a > b ? 0 : 1].name)}</span>`;
+    }
+    $('bottom').innerHTML = chips.join('') + status;
+    voiceOnChange(last, s);
+    last = s;
+  }
+
+  // ---------- Voz ----------
+  // Los navegadores solo permiten hablar después de un toque/clic en la página.
+  let voiceOn = false;
+  let voiceDebounce = null;
+  function voiceText(s) {
+    const [A, B] = s.teams.map(t => t.name);
+    const [a, b] = s.points;
+    if (s.phase === 'matchOver') return `${s.teams[s.matchWinner].name} gana el partido. Sets ${s.sets[0]} a ${s.sets[1]}.`;
+    if (s.phase === 'setOver') {
+      const next = s.rotationMode && s.nextIn !== null ? ` Siguiente en entrar: ${s.allTeams[s.nextIn].name}.` : '';
+      return `Set para ${s.teams[s.setWinner].name}. ${A}: ${a}. ${B}: ${b}.${next}`;
+    }
+    return `${A}: ${a}. ${B}: ${b}.`;
+  }
+  // Botón siempre visible con el estado de la voz:
+  //   apagada en la sala → explica dónde activarla; activada → hay que tocar una vez; activa → pausar.
+  function paintVoiceBtn(s) {
+    const btn = $('voiceBtn');
+    const enabled = s && s.voice && s.voice.enabled;
+    btn.classList.toggle('hidden', !DC.voiceSupported);
+    btn.className = enabled && !voiceOn ? 'ok' : 'alt';
+    btn.textContent = !enabled ? '🔇 Voz apagada' : voiceOn ? '🔊 Voz activa' : '🔊 Activar voz';
+  }
+  function voiceOnChange(prev, s) {
+    const enabled = s.voice && s.voice.enabled && DC.voiceSupported;
+    paintVoiceBtn(s);
+    if (!enabled) { DC.stopSpeaking(); return; }
+    if (!voiceOn || !prev) return;
+    const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet;
+    if (!changed) return;
+    // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
+    clearTimeout(voiceDebounce);
+    voiceDebounce = setTimeout(() => DC.speak(voiceText(last), last.voice), 600);
+  }
+  $('voiceBtn').onclick = () => {
+    if (!last || !last.voice || !last.voice.enabled) {
+      DC.toast('La voz está apagada para esta sala. Actívala en Administración → «Voz del marcador» o al crear el tablero.');
+      return;
+    }
+    voiceOn = !voiceOn;
+    if (voiceOn) DC.speak(voiceText(last), { ...last.voice, repeat: 1 });
+    else { DC.stopSpeaking(); DC.toast('Voz en pausa en esta pantalla'); }
+    paintVoiceBtn(last);
+  };
+  if (!DC.voiceSupported) $('voiceBtn').classList.add('hidden');
+
+  DC.connect({
+    role: 'marcador',
+    onState: render,
+    onConnection: (st, err) => DC.renderConnection($('conn'), st, err),
+    onPresence: p => { $('presence').textContent = `Controles ${p.controls.length}/2`; },
+  });
+
+  // Pantalla completa + mantener la pantalla encendida cuando el navegador lo permite.
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  $('fs').onclick = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement);
+    } catch { DC.toast('Este navegador no permite pantalla completa', 'bad'); }
+    keepAwake();
+  };
+  document.addEventListener('fullscreenchange', () => {
+    document.body.classList.toggle('fs', !!document.fullscreenElement);
+    $('fs').textContent = document.fullscreenElement ? 'Salir' : 'Pantalla completa';
+  });
+  document.addEventListener('visibilitychange', keepAwake);
+  document.addEventListener('dblclick', () => $('fs').click());
+</script>
+</body>
+</html>

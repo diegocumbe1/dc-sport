@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Datos persistidos del marcador (se generan al ejecutar)
+data/
+*.tmp
+*.corrupt-*
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+
+# Vercel / Render
+.vercel/
