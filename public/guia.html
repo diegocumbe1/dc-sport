@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Guía de uso de DC Sport Score: modo solo celular, dos pantallas, puntos, sets, voz y administración.">
+<meta property="og:title" content="Guía de uso · DC Sport Score">
+<meta property="og:description" content="Cómo llevar el marcador de voleibol desde el celular, con voz y parlante Bluetooth.">
+<meta property="og:image" content="/guia/img/03-marcador.jpg">
+<title>Guía de uso · DC Sport Score</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: guía de cancha — índice fijo a la izquierda en escritorio, una columna en el celular;
+   capturas reales en marcos de celular/pantalla; acentos con los colores de equipo del marcador. */
+:root {
+  --bg: #f2f4f8;
+  --surface: #ffffff;
+  --sunken: #e7ebf2;
+  --ink: #0e1626;
+  --muted: #56617a;
+  --line: #d6dce7;
+  --ball: #f0b400;
+  --ball-ink: #1b1400;
+  --team-a: #1e6fd9;
+  --team-b: #d62f4b;
+  --good: #1b8f52;
+  --bezel: #0b0f18;
+  --shadow: 0 1px 2px rgb(14 22 38 / .06), 0 8px 28px rgb(14 22 38 / .08);
+  --f-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0e17; --surface: #131b2c; --sunken: #0f1524; --ink: #edf1f8; --muted: #9aa5bc; --line: #243048;
+    --ball: #f5bd1f; --ball-ink: #1b1400; --team-a: #4a8ef0; --team-b: #ef5a72; --good: #3fc07c; --bezel: #000;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 10px 30px rgb(0 0 0 / .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0e17; --surface: #131b2c; --sunken: #0f1524; --ink: #edf1f8; --muted: #9aa5bc; --line: #243048;
+  --ball: #f5bd1f; --ball-ink: #1b1400; --team-a: #4a8ef0; --team-b: #ef5a72; --good: #3fc07c; --bezel: #000;
+  --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 10px 30px rgb(0 0 0 / .35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 17px/1.6 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: var(--team-a); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--ball); outline-offset: 2px; border-radius: 6px; }
+code, .url { font-family: var(--f-mono); font-size: .86em; background: var(--sunken); padding: .1em .4em; border-radius: 5px; overflow-wrap: anywhere; }
+kbd { font: 700 .85em var(--f-body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 0 .4em; background: var(--surface); }
+
+.wrap { max-width: 1160px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding-block: 28px 80px; }
+@media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 16px 64px; } }
+
+/* Índice */
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 15px; }
+.toc .brand { font: 800 22px/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.toc ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; counter-reset: s; }
+.toc li a { display: flex; gap: 10px; color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+.toc li a::before { counter-increment: s; content: counter(s, decimal-leading-zero); font: 700 13px/1.9 var(--f-mono); color: var(--muted); opacity: .6; min-width: 2ch; }
+/* «Elige el modo» es la portada, no un paso: los números coinciden con los de cada sección. */
+.toc li:first-child a::before { counter-increment: none; content: "··"; }
+.toc li a:hover { color: var(--ink); background: var(--sunken); }
+.toc li a.on { color: var(--ink); background: var(--surface); box-shadow: var(--shadow); }
+.toc li a.on::before { color: var(--ball); }
+@media (max-width: 900px) { .toc { display: none; } }
+
+.topbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.topbar a.home { font-weight: 700; text-decoration: none; }
+.share-btn { appearance: none; font: 700 14px var(--f-body); padding: 9px 14px; border-radius: 10px; border: 1px solid var(--ball); background: var(--ball); color: var(--ball-ink); cursor: pointer; }
+.ball { width: 22px; height: 22px; flex: none; }
+
+/* Portada */
+.hero { padding-block: 8px 40px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.eyebrow { font: 700 13px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.hero h1 { font: 800 clamp(44px, 8vw, 84px)/.92 var(--f-display); text-transform: uppercase; letter-spacing: -.01em; margin: 16px 0 18px; text-wrap: balance; }
+.hero h1 .score { display: inline-flex; gap: .12em; align-items: baseline; }
+.hero h1 .a { color: var(--team-a); }
+.hero h1 .b { color: var(--team-b); }
+.hero p.lead { font-size: clamp(18px, 2.2vw, 21px); color: var(--muted); max-width: 60ch; margin: 0; }
+
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+@media (max-width: 640px) { .modes { grid-template-columns: minmax(0, 1fr); } }
+.mode { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 8px; align-content: start; }
+.mode .tag { font: 700 12px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.mode h3 { font: 700 26px/1.05 var(--f-display); text-transform: uppercase; margin: 0; }
+.mode p { margin: 0; color: var(--muted); font-size: 16px; }
+.mode .kit { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mode .kit span { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 99px; background: var(--sunken); }
+.mode.solo { border-color: var(--ball); box-shadow: inset 0 0 0 1px var(--ball); }
+.mode .url { font-size: 13px; justify-self: start; }
+
+/* Secciones */
+section.step { padding-block: 44px 8px; scroll-margin-top: 16px; }
+h2 { font: 800 clamp(30px, 4.4vw, 42px)/1 var(--f-display); text-transform: uppercase; margin: 0 0 14px; text-wrap: balance; display: flex; align-items: baseline; gap: 14px; }
+h2 .n { font: 700 15px/1 var(--f-mono); color: var(--ball-ink); background: var(--ball); padding: 6px 8px; border-radius: 8px; transform: translateY(-6px); }
+h3 { font: 700 24px/1.1 var(--f-display); text-transform: uppercase; margin: 28px 0 8px; }
+.prose { max-width: 66ch; }
+.prose p, .prose ul, .prose ol { margin: 0 0 14px; }
+.prose li { margin-bottom: 6px; }
+.prose li::marker { color: var(--muted); }
+
+/* Capturas */
+figure { margin: 22px 0 8px; }
+figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; max-width: 70ch; }
+figcaption b { color: var(--ink); }
+.frame { display: block; max-width: 100%; border-radius: 14px; overflow: hidden; background: var(--bezel); box-shadow: var(--shadow); }
+.frame img { display: block; width: 100%; height: auto; }
+.frame.screen { padding-top: 26px; position: relative; border: 1px solid var(--line); }
+.frame.screen::before { content: ""; position: absolute; top: 9px; left: 12px; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; box-shadow: 14px 0 0 #f5b400, 28px 0 0 #2fbf71; }
+.frame.phone { padding: 10px 26px; border-radius: 34px; position: relative; }
+.frame.phone::after { content: ""; position: absolute; left: 9px; top: 50%; width: 6px; height: 46px; margin-top: -23px; border-radius: 4px; background: #1d2433; }
+.frame.phone img { border-radius: 16px; }
+.frame.tall { max-width: 640px; }
+.zoom { color: inherit; text-decoration: none; cursor: zoom-in; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+
+/* Notas */
+.note { border-radius: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); font-size: 16px; max-width: 66ch; margin: 16px 0; display: grid; gap: 4px; }
+.note strong:first-child { font: 700 12px/1.4 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.note.warn { border-left: 4px solid var(--ball); }
+.note.tip { border-left: 4px solid var(--good); }
+
+/* Gestos */
+.gestures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; max-width: 760px; }
+@media (max-width: 640px) { .gestures { grid-template-columns: minmax(0, 1fr); } }
+.gesture { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 4px; }
+.gesture .big { font: 800 36px/1 var(--f-display); }
+.gesture .big.plus { color: var(--good); }
+.gesture .big.minus { color: var(--team-b); }
+.gesture p { margin: 0; font-size: 15px; color: var(--muted); }
+
+/* Demo de toque */
+.demo { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 20px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin: 20px 0; max-width: 760px; }
+@media (max-width: 640px) { .demo { grid-template-columns: minmax(0, 1fr); } }
+.pad { appearance: none; border: 0; width: 100%; aspect-ratio: 4 / 3; max-width: 100%; border-radius: 20px; background: var(--team-a); color: #fff; font-family: var(--f-display); display: grid; place-content: center; text-align: center; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; position: relative; overflow: hidden; transition: filter .1s, transform .08s; }
+.pad:active { transform: scale(.985); }
+.pad .nm { font-weight: 800; font-size: 22px; letter-spacing: .03em; }
+.pad .pts { font-weight: 800; font-size: 92px; line-height: .95; font-variant-numeric: tabular-nums; }
+.pad .hint { font: 400 13px var(--f-body); opacity: .85; }
+.pad.pending { filter: brightness(1.25); }
+.pad .fx { position: absolute; inset: 0; display: grid; place-items: center; font-size: 90px; font-weight: 800; opacity: 0; pointer-events: none; }
+.pad.flash-plus .fx { animation: fx .6s ease-out; background: rgb(47 191 113 / .45); }
+.pad.flash-minus .fx { animation: fx .6s ease-out; background: rgb(0 0 0 / .5); }
+@keyframes fx { from { opacity: 1; } to { opacity: 0; } }
+.demo-log { font-size: 15px; display: grid; gap: 10px; min-width: 0; }
+.demo-log h4 { margin: 0; font: 700 20px/1.1 var(--f-display); text-transform: uppercase; }
+.demo-log p { margin: 0; color: var(--muted); }
+.demo-log ol { margin: 0; padding-left: 20px; font-family: var(--f-mono); font-size: 13px; min-height: 4.8em; }
+.demo-log ol:empty::before { content: "Aún no hay toques."; font-family: var(--f-body); color: var(--muted); margin-left: -20px; }
+.demo-log .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { appearance: none; font: 700 14px var(--f-body); padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunken); color: var(--ink); cursor: pointer; }
+
+/* Frases de la voz */
+.calls { display: grid; gap: 10px; margin: 16px 0; max-width: 760px; }
+.call { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+@media (max-width: 520px) { .call { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.call .when { font: 700 13px/1.3 var(--f-body); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.call q { font-style: italic; quotes: "«" "»"; }
+
+/* Tabla de problemas */
+.faq { display: grid; gap: 10px; max-width: 760px; margin-top: 16px; }
+.faq details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+.faq summary { cursor: pointer; font-weight: 700; padding: 14px 0; list-style-position: outside; }
+.faq details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.faq details > div { padding-bottom: 14px; color: var(--muted); }
+.faq details > div p { margin: 0 0 10px; }
+
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="var(--ball)" stroke="var(--ink)" stroke-width="1.5"/><path d="M12 1.5c-1.6 4.2-1.2 8 1.2 10.5M12 12c3.4.6 7 3 8.9 6.3M12 12c-2.7 2.2-6.9 3.3-10.4 2.6M5 4.2c3.6.8 6.4 3.6 7 7.8" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contenido">
+    <div class="brand"><svg class="ball"><use href="#ball"/></svg>Guía de uso</div>
+    <ol id="tocList">
+      <li><a href="#modos">Elige el modo</a></li>
+      <li><a href="#crear">Crear el tablero</a></li>
+      <li><a href="#solo">Solo celular</a></li>
+      <li><a href="#dos">Dos pantallas</a></li>
+      <li><a href="#puntos">Sumar y restar</a></li>
+      <li><a href="#sets">Fin de set</a></li>
+      <li><a href="#voz">La voz</a></li>
+      <li><a href="#menu">Menú del control</a></li>
+      <li><a href="#admin">Administración</a></li>
+      <li><a href="#problemas">Si algo falla</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="topbar">
+      <a class="home" href="/">← Abrir la app</a>
+      <button class="share-btn" id="shareGuide" type="button">Compartir esta guía</button>
+    </div>
+    <header class="hero">
+      <div class="eyebrow"><svg class="ball"><use href="#ball"/></svg>DC Sport Score · Voleibol (beta)</div>
+      <h1>Lleva el marcador <span class="score"><span class="a">25</span>–<span class="b">23</span></span> desde tu celular</h1>
+      <p class="lead">Marcador en tiempo real para partidos de voleibol de 2 a 6 equipos. Tocas el celular para sumar puntos y el marcador los muestra y los anuncia por voz, en la TV o en el mismo celular con un parlante Bluetooth.</p>
+
+      <div class="modes" id="modos">
+        <article class="mode solo">
+          <span class="tag">Modo 1</span>
+          <h3>Solo celular</h3>
+          <p>El celular es control, marcador y voz a la vez. Ideal para ir a la cancha sin TV.</p>
+          <div class="kit"><span>1 celular</span><span>Parlante Bluetooth (opcional)</span></div>
+          <span class="url">/control?sala=…&amp;modo=uno</span>
+        </article>
+        <article class="mode">
+          <span class="tag">Modo 2</span>
+          <h3>Dos pantallas</h3>
+          <p>Una TV o PC muestra el marcador grande y habla; el celular hace de control remoto.</p>
+          <div class="kit"><span>TV o PC</span><span>1 o 2 celulares</span></div>
+          <span class="url">/marcador?sala=… + /control?sala=…</span>
+        </article>
+      </div>
+    </header>
+
+    <section class="step" id="crear">
+      <h2><span class="n">01</span>Crea el tablero</h2>
+      <div class="prose">
+        <p>Abre la página de inicio con la dirección que te compartió el organizador. Todo gira alrededor del <b>código de sala</b>: es el nombre del partido y debe ser el mismo en todos los dispositivos. Usa de 3 a 24 letras, números, <code>-</code> o <code>_</code>, por ejemplo <code>final-sabado</code>.</p>
+        <ol>
+          <li>Escribe el código de sala.</li>
+          <li>En <b>Crear tablero</b> elige la cantidad de equipos (2 a 6) y los puntos por set (10, 15, 20, 21 o 25).</li>
+          <li>Pon nombre y color a cada equipo. Si dejas el nombre vacío, el equipo toma el nombre de su color: AZUL, ROJO…</li>
+          <li>La casilla de voz ya viene marcada. Desmárcala si no quieres anuncios.</li>
+          <li>Toca <b>Crear tablero</b>.</li>
+        </ol>
+      </div>
+      <figure>
+        <a class="zoom" href="/guia/img/01-inicio.jpg" target="_blank" rel="noopener"><span class="frame screen"><img src="/guia/img/01-inicio.jpg" width="1200" height="925" alt="Página de inicio con el código de sala final-sabado y el formulario Crear tablero: 2 equipos, a 25 puntos, Tiburones en azul y Halcones en rojo, voz activada."></span></a>
+        <figcaption><b>Inicio.</b> Sala <code>final-sabado</code>, dos equipos a 25 puntos.</figcaption>
+      </figure>
+      <figure>
+        <a class="zoom" href="/guia/img/02-tablero-listo.jpg" target="_blank" rel="noopener"><span class="frame screen"><img src="/guia/img/02-tablero-listo.jpg" width="1200" height="760" alt="Aviso verde: Tablero final-sabado creado, con los botones Abrir marcador, Abrir control y Solo celular."></span></a>
+        <figcaption><b>Tablero listo.</b> Desde el aviso verde abres el modo que vas a usar. Si la sala ya tenía un partido en curso, se pide el PIN de administración para reconfigurarla.</figcaption>
+      </figure>
+    </section>
+
+    <section class="step" id="solo">
+      <h2><span class="n">02</span>Modo solo celular</h2>
+      <div class="prose">
+        <p>Toca <b>Solo celular (control + voz)</b>. El celular muestra los puntos y anuncia cada cambio en voz alta.</p>
+        <ol>
+          <li>Conecta el parlante Bluetooth al celular y sube el volumen.</li>
+          <li>Gira el celular a horizontal.</li>
+          <li>Toca <b>Activar voz</b>. Debería escucharse el marcador actual.</li>
+        </ol>
+      </div>
+      <figure>
+        <a class="zoom" href="/guia/img/06-solo-celular.jpg" target="_blank" rel="noopener"><span class="frame phone"><img src="/guia/img/06-solo-celular.jpg" width="1688" height="780" alt="Control en el celular con el aviso Un solo dispositivo y los botones Sin voz y Activar voz." loading="lazy"></span></a>
+        <figcaption><b>Primer toque.</b> Los navegadores no dejan reproducir sonido hasta que la persona toca la pantalla. Por eso aparece este aviso cada vez que se abre la página.</figcaption>
+      </figure>
+      <div class="note tip">
+        <strong>Consejo</strong>
+        Mientras la voz está activa, el control intenta mantener la pantalla encendida. Si el celular se bloquea, deja de anunciar: desactiva el bloqueo automático durante el partido por si tu navegador no lo permite.
+      </div>
+    </section>
+
+    <section class="step" id="dos">
+      <h2><span class="n">03</span>Modo dos pantallas</h2>
+      <div class="prose">
+        <p>En la TV o el PC toca <b>Abrir marcador</b> y luego <b>Pantalla completa</b> (o doble clic en la pantalla). En el celular abre <b>Abrir control</b> con el mismo código de sala. Los dos se actualizan al instante.</p>
+        <p>El balón 🏐 junto al nombre marca al equipo con el saque, el que ganó el último punto. Abajo se ve el resultado de cada set.</p>
+      </div>
+      <figure>
+        <a class="zoom" href="/guia/img/03-marcador.jpg" target="_blank" rel="noopener"><span class="frame screen"><img src="/guia/img/03-marcador.jpg" width="1280" height="720" alt="Marcador en pantalla grande: Tiburones 14, Halcones 16 con el saque, set 2 a 25, sets 1 a 0, resultado del set 1 25-23." loading="lazy"></span></a>
+        <figcaption><b>Marcador en la TV.</b> Arriba: sala, controles conectados, estado «En vivo», botón de voz, elegir voz (⚙) y pantalla completa.</figcaption>
+      </figure>
+      <figure>
+        <a class="zoom" href="/guia/img/04-control.jpg" target="_blank" rel="noopener"><span class="frame phone"><img src="/guia/img/04-control.jpg" width="1688" height="780" alt="Control en el celular en horizontal con dos zonas grandes: Tiburones 14 en azul y Halcones 16 en rojo." loading="lazy"></span></a>
+        <figcaption><b>Control en el celular.</b> Cada mitad es un equipo. Arriba: resumen del partido, voz, Deshacer y el menú ☰.</figcaption>
+      </figure>
+      <div class="note">
+        <strong>Cuántos dispositivos</strong>
+        Por sala: 1 marcador y hasta 2 controles. Para tener un control por lado (por ejemplo, un celular por cada capitán) usa los enlaces <b>Control A</b> y <b>Control B</b> de «Compartir enlaces» en el inicio. Los dispositivos pueden estar en redes distintas.
+      </div>
+    </section>
+
+    <section class="step" id="puntos">
+      <h2><span class="n">04</span>Sumar y restar puntos</h2>
+      <div class="gestures">
+        <div class="gesture"><span class="big plus">1 toque</span><p>Suma un punto al equipo que tocaste.</p></div>
+        <div class="gesture"><span class="big minus">2 toques</span><p>Dos toques rápidos restan un punto. Sirve para corregir.</p></div>
+        <div class="gesture"><span class="big">↶ Deshacer</span><p>Revierte la última acción, incluso un cierre de set o una rotación.</p></div>
+      </div>
+      <div class="prose">
+        <p>El +1 se envía cuando pasa la ventana de doble toque, 350 ms por defecto, para saber si viene un segundo toque. Por eso el número cambia un instante después de tocar. Puedes ajustar la ventana en el menú ☰.</p>
+      </div>
+      <div class="demo" aria-label="Prueba de toque">
+        <button class="pad" id="demoPad" type="button" aria-label="Zona de prueba: toca una vez para sumar, dos veces para restar">
+          <span class="nm">TIBURONES</span>
+          <span class="pts" id="demoPts">14</span>
+          <span class="hint">1 toque +1 · 2 toques −1</span>
+          <span class="fx" id="demoFx"></span>
+        </button>
+        <div class="demo-log">
+          <h4>Pruébalo aquí</h4>
+          <p>Esta zona funciona igual que el control, con la misma ventana de 350 ms. No se conecta a ninguna sala.</p>
+          <ol id="demoLog" aria-live="polite"></ol>
+          <div class="row"><button class="btn" id="demoReset" type="button">Volver a 14</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step" id="sets">
+      <h2><span class="n">05</span>Fin de set</h2>
+      <div class="prose">
+        <p>Un set termina al llegar a la meta (por ejemplo 25) con al menos 2 puntos de diferencia. Si van 24-24, se sigue hasta que alguien saque 2 de ventaja.</p>
+        <p>Al cerrar el set, el control se bloquea para que nadie sume puntos sin querer. Toca <b>Comenzar set</b> para seguir, o <b>Deshacer último punto</b> si el set se cerró por error.</p>
+      </div>
+      <div class="pair">
+        <figure>
+          <a class="zoom" href="/guia/img/07-marcador-set.jpg" target="_blank" rel="noopener"><span class="frame screen"><img src="/guia/img/07-marcador-set.jpg" width="1280" height="720" alt="Marcador con Tiburones 25, Halcones 16 y el aviso SET 2 PARA TIBURONES." loading="lazy"></span></a>
+          <figcaption><b>Marcador.</b> Resalta al ganador del set.</figcaption>
+        </figure>
+        <figure>
+          <a class="zoom" href="/guia/img/08-control-set.jpg" target="_blank" rel="noopener"><span class="frame phone"><img src="/guia/img/08-control-set.jpg" width="1688" height="780" alt="Control con el aviso Set 2 para Tiburones, resultado 25-16, y los botones Comenzar set 3 y Deshacer último punto." loading="lazy"></span></a>
+          <figcaption><b>Control.</b> Confirma antes del siguiente set.</figcaption>
+        </figure>
+      </div>
+      <h3>Con 3 o más equipos</h3>
+      <div class="prose">
+        <p>Juegan dos equipos y el resto espera en cola. Al terminar cada set, el control ofrece <b>Entra X (sale Y)</b>: el ganador se queda, sale el perdedor y entra el siguiente. También puedes elegir <b>Mismos equipos</b>. La barra superior muestra quién espera.</p>
+      </div>
+      <figure>
+        <a class="zoom" href="/guia/img/09-rotacion.jpg" target="_blank" rel="noopener"><span class="frame phone"><img src="/guia/img/09-rotacion.jpg" width="1688" height="780" alt="Control con tres equipos: Set 1 para Verde 15-13, botones Entra ROJO (sale AZUL), Mismos equipos y Deshacer último punto." loading="lazy"></span></a>
+        <figcaption><b>Rotación.</b> Verde ganó 15-13. Rojo estaba esperando y entra por Azul.</figcaption>
+      </figure>
+    </section>
+
+    <section class="step" id="voz">
+      <h2><span class="n">06</span>La voz</h2>
+      <div class="prose">
+        <p>La voz viene activada en las salas nuevas. Suena en el dispositivo donde tocas <b>Activar voz</b>: el marcador en el modo dos pantallas, o el celular en el modo solo celular. Con cada cambio de puntos espera un momento y anuncia solo el último marcador.</p>
+        <p>Primero nombra al equipo que tiene el saque, es decir, el que ganó el último punto.</p>
+      </div>
+      <div class="calls">
+        <div class="call"><span class="when">Punto normal</span><q>Halcones, 16. Tiburones, 14.</q></div>
+        <div class="call"><span class="when">Empate</span><q>Empate a 5. Saca Rojo.</q></div>
+        <div class="call"><span class="when">Punto de set</span><q>Azul, 24. Rojo, 23. Punto de set para Azul.</q></div>
+        <div class="call"><span class="when">Fin de set</span><q>¡Set para Tiburones! Quedó 25 a 16.</q></div>
+      </div>
+      <div class="note">
+        <strong>¿Qué es «punto de set»?</strong>
+        El equipo que va ganando está a un solo punto de cerrar el set. En un set a 10, con 9-4, la voz dice «Punto de set para Azul» porque un punto más le da el set.
+      </div>
+      <h3>Elegir la voz</h3>
+      <div class="prose">
+        <ul>
+          <li>Por defecto se usa <b>Google español</b> si el navegador la tiene (Chrome).</li>
+          <li>Para cambiarla: botón <b>⚙</b> en el marcador, o <b>☰ → Voz de este celular</b> en el control. Las voces marcadas con ⭐ suenan más naturales. La elección se recuerda en ese dispositivo.</li>
+          <li>Para acento colombiano, abre la página en <b>Microsoft Edge</b>: trae las voces «Salomé» y «Gonzalo» (Español, Colombia).</li>
+          <li>Velocidad, repeticiones y pausa entre repeticiones se ajustan en Administración.</li>
+        </ul>
+      </div>
+      <div class="note warn">
+        <strong>Importante</strong>
+        Activa la voz en un solo dispositivo. Si la activas en el marcador y en el control a la vez, sonarán los dos.
+      </div>
+    </section>
+
+    <section class="step" id="menu">
+      <h2><span class="n">07</span>Menú del control</h2>
+      <div class="prose">
+        <p>El botón <b>☰</b> abre las opciones del partido:</p>
+        <ul>
+          <li><b>Deshacer</b>: debajo dice qué se va a revertir, por ejemplo «+1 HALCONES».</li>
+          <li><b>Reiniciar set</b>: pone el set actual en 0-0. <b>Reiniciar partido</b>: pone en 0 puntos y sets. Ambos piden confirmación.</li>
+          <li><b>Puntos por set</b>: solo se puede cambiar con el set en 0-0.</li>
+          <li><b>Ventana de doble toque</b>: súbela si te cuesta hacer el doble toque a tiempo.</li>
+          <li><b>Voz de este celular</b>, <b>Pantalla completa</b> y <b>Borrar datos locales</b>.</li>
+        </ul>
+      </div>
+      <figure>
+        <a class="zoom" href="/guia/img/05-menu.jpg" target="_blank" rel="noopener"><span class="frame phone"><img src="/guia/img/05-menu.jpg" width="1688" height="780" alt="Menú Opciones del control: Deshacer, Reiniciar set, Reiniciar partido, Puntos por set A 25, Ventana de doble toque 350 ms, Pantalla completa, Voz de este celular, Borrar datos locales." loading="lazy"></span></a>
+        <figcaption><b>Opciones.</b> El texto «Deshacer revierte: +1 HALCONES» avisa qué se va a deshacer.</figcaption>
+      </figure>
+    </section>
+
+    <section class="step" id="admin">
+      <h2><span class="n">08</span>Administración</h2>
+      <div class="prose">
+        <p>Desde el inicio, <b>Administración</b> abre el panel de la sala. Pide el PIN que te dio el organizador y lo recuerda en ese navegador por 4 horas.</p>
+        <ul>
+          <li><b>Equipos</b>: nombres, colores, agregar o quitar (2 a 6).</li>
+          <li><b>Configuración del partido</b>: puntos por set y regla de rotación.</li>
+          <li><b>Voz del marcador</b>: activar, velocidad, repeticiones, segundos entre repeticiones e idioma. <b>Probar aquí</b> la reproduce en ese navegador.</li>
+          <li><b>Corregir marcador</b>: escribe a mano los puntos y sets si hubo un error.</li>
+          <li><b>Historial</b> de cada punto, y <b>Salas guardadas</b> para borrar salas de prueba.</li>
+        </ul>
+      </div>
+      <div class="pair">
+        <figure>
+          <a class="zoom" href="/guia/img/10-admin-pin.jpg" target="_blank" rel="noopener"><span class="frame screen"><img src="/guia/img/10-admin-pin.jpg" width="1200" height="600" alt="Pantalla de acceso a Administración que pide el PIN." loading="lazy"></span></a>
+          <figcaption><b>Acceso con PIN.</b></figcaption>
+        </figure>
+        <figure>
+          <a class="zoom" href="/guia/img/11-admin.jpg" target="_blank" rel="noopener"><span class="frame screen tall"><img src="/guia/img/11-admin.jpg" width="1200" height="1390" alt="Panel de administración: resumen del partido, equipos, configuración, voz del marcador y corregir marcador." loading="lazy"></span></a>
+          <figcaption><b>Panel.</b> Resumen arriba y cada ajuste en su bloque.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="step" id="problemas">
+      <h2><span class="n">09</span>Si algo falla</h2>
+      <div class="faq">
+        <details>
+          <summary>Dice «Sin conexión» o «Reconectando…»</summary>
+          <div><p>Los toques no se envían mientras no haya conexión, para no aplicar puntos viejos después. Revisa los datos o el Wi-Fi del celular. Al volver, todos los dispositivos se ponen al día solos con el marcador guardado en el servidor.</p></div>
+        </details>
+        <details>
+          <summary>Dice «Sala llena»</summary>
+          <div><p>Ya hay un marcador o dos controles abiertos en esa sala. Cierra la página en el dispositivo que sobra. Si un celular perdió la red, su lugar se libera en unos 20 segundos y la página vuelve a intentar sola.</p></div>
+        </details>
+        <details>
+          <summary>No se escucha la voz</summary>
+          <div>
+            <p>Toca <b>Activar voz</b> en ese dispositivo: hay que hacerlo cada vez que se abre la página. Si el botón dice «Voz apagada», está desactivada para la sala: actívala en Administración → Voz del marcador.</p>
+            <p>Revisa también el volumen del celular y que el parlante Bluetooth esté conectado antes de activar la voz.</p>
+          </div>
+        </details>
+        <details>
+          <summary>El número tarda un poco en cambiar</summary>
+          <div><p>Es la ventana de doble toque: el control espera 350 ms para saber si es un toque o dos. Puedes bajarla en ☰ → Ventana de doble toque.</p></div>
+        </details>
+        <details>
+          <summary>Sumé un punto al equipo equivocado</summary>
+          <div><p>Toca <b>↶ Deshacer</b>, o haz doble toque sobre ese equipo para restarle uno. Si hay que corregir varios puntos, usa Administración → Corregir marcador.</p></div>
+        </details>
+        <details>
+          <summary>¿Se pierde el partido si cierro la página?</summary>
+          <div><p>No. El marcador se guarda en el servidor. Vuelve a abrir el enlace con el mismo código de sala y sigue donde estaba. El navegador solo recuerda la sala y tus ajustes por 4 horas.</p></div>
+        </details>
+      </div>
+    </section>
+
+    <footer>
+      <span>DC Sport Score · beta de voleibol</span>
+      <span>Capturas tomadas de la aplicación real con datos de ejemplo.</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+  // Demo de toque: misma lógica que el control (toque simple +1 tras 350 ms, doble toque −1).
+  (function () {
+    const WINDOW_MS = 350;
+    const pad = document.getElementById('demoPad');
+    const ptsEl = document.getElementById('demoPts');
+    const fx = document.getElementById('demoFx');
+    const log = document.getElementById('demoLog');
+    let pts = 14;
+    let pending = null;
+    function note(text) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      log.prepend(li);
+      while (log.children.length > 4) log.lastChild.remove();
+    }
+    function flash(kind, text) {
+      fx.textContent = text;
+      pad.classList.remove('flash-plus', 'flash-minus');
+      void pad.offsetWidth;
+      pad.classList.add('flash-' + kind);
+    }
+    pad.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (pending) {
+        clearTimeout(pending);
+        pending = null;
+        pad.classList.remove('pending');
+        pts = Math.max(0, pts - 1);
+        ptsEl.textContent = pts;
+        flash('minus', '−1');
+        note('2 toques → −1 (queda ' + pts + ')');
+        return;
+      }
+      pad.classList.add('pending');
+      fx.textContent = '';
+      pending = setTimeout(() => {
+        pending = null;
+        pad.classList.remove('pending');
+        pts++;
+        ptsEl.textContent = pts;
+        flash('plus', '+1');
+        note('1 toque → +1 a los ' + WINDOW_MS + ' ms (queda ' + pts + ')');
+      }, WINDOW_MS);
+    });
+    pad.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pad.dispatchEvent(new PointerEvent('pointerdown', { button: 0 })); }
+    });
+    pad.addEventListener('contextmenu', e => e.preventDefault());
+    document.getElementById('demoReset').onclick = () => { pts = 14; ptsEl.textContent = pts; log.innerHTML = ''; };
+  })();
+
+  // Compartir: hoja nativa en el celular; en el PC copia el enlace.
+  document.getElementById('shareGuide').onclick = async e => {
+    const url = location.origin + '/guia';
+    const btn = e.currentTarget;
+    try {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Guía de uso · DC Sport Score', url });
+      else { await navigator.clipboard.writeText(url); btn.textContent = 'Enlace copiado'; setTimeout(() => { btn.textContent = 'Compartir esta guía'; }, 1600); }
+    } catch (err) { if (err && err.name !== 'AbortError') prompt('Copia el enlace:', url); }
+  };
+
+  // Índice: resalta la sección visible.
+  (function () {
+    const links = [...document.querySelectorAll('#tocList a')];
+    const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+    if (!('IntersectionObserver' in window)) return;
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(en => {
+        if (!en.isIntersecting) return;
+        links.forEach(a => a.classList.remove('on'));
+        map.get(en.target.id)?.classList.add('on');
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    map.forEach((_, id) => { const el = document.getElementById(id); if (el) obs.observe(el); });
+  })();
+</script>
+</body>
+</html>

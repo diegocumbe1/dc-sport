@@ -40,6 +40,7 @@ ADMIN_PIN=5678 npm start
 | `/control?sala=voley&equipo=a`       | Control de **un solo lado** (izquierdo = A, derecho = B), como un pulsador     |
 | `/control?sala=voley&modo=uno`       | **Solo celular**: control + marcador + voz (con parlante Bluetooth, sin TV)     |
 | `/admin?sala=voley`                  | Administración protegida con PIN                                              |
+| `/guia`                              | **Guía de uso** pública con capturas (para compartir con jugadores)            |
 | `/api/health`                        | Estado del servidor (para Render)                                             |
 | `/api/rooms/:sala`                   | Estado de una sala en JSON (lectura)                                          |
 
@@ -161,6 +162,7 @@ public/index.html         Inicio y creación de tablero
 public/marcador.html      Marcador para TV/PC
 public/control.html       Control remoto táctil
 public/admin.html         Administración
+public/guia.html          Guía de uso (imágenes en public/guia/img/)
 public/js/common.js       Conexión, caché local con vencimiento, voz, modales, utilidades
 public/css/app.css        Estilos
 public/config/options.json Opciones de las listas desplegables

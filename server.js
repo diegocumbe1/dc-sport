@@ -230,6 +230,7 @@ app.get('/', page('index.html'));
 app.get('/marcador', page('marcador.html'));
 app.get('/control', page('control.html'));
 app.get('/admin', page('admin.html'));
+app.get('/guia', page('guia.html'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, rooms: games.size, uptime: process.uptime() }));
 app.get('/api/info', (req, res) => {

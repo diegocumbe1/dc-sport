@@ -17,6 +17,7 @@
     <a id="remote">Abrir control</a>
     <a id="single">Solo celular (control + voz)</a>
     <a id="admin" class="alt">Administración</a>
+    <a href="/guia" class="alt">Guía de uso</a>
   </div>
   <p class="muted"><b>Solo celular:</b> el control muestra los puntos y los anuncia por voz (sirve con parlante Bluetooth), sin TV ni otro dispositivo.</p>
   <p class="muted">Dos pantallas · por sala: 1 marcador (PC/TV) y hasta 2 controles (celulares). Cada control puede manejar un lado (A o B) o ambos. Los dispositivos pueden estar en redes distintas si el servidor es público (ngrok, Render).</p>
@@ -82,6 +83,7 @@
     ['control', 'Control A+B'],
     ['control', 'Solo celular (control + voz)', '&modo=uno'],
     ['admin', 'Admin'],
+    ['guia', 'Guía de uso', null, true], // no depende de la sala
   ];
   const currentRoom = () => { const r = DC.cleanRoom(input.value); return r.length >= 3 ? r : 'voley'; };
 
@@ -97,8 +99,8 @@
     $('readyRemote').href = '/control' + q;
     // Desde localhost los enlaces a compartir usan la IP local; desde ngrok/Render, el dominio actual.
     const base = isLocal && lanBase ? lanBase : location.origin;
-    $('links').innerHTML = views.map(([v, label, extra]) => {
-      const url = `${base}/${v}${q}${extra || ''}`;
+    $('links').innerHTML = views.map(([v, label, extra, noRoom]) => {
+      const url = noRoom ? `${base}/${v}` : `${base}/${v}${q}${extra || ''}`;
       return `<div class="share-row"><span>${label}</span><code>${url}</code><button type="button" data-url="${url}">Copiar</button></div>`;
     }).join('');
   }
