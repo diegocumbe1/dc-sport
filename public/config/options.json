@@ -2,89 +2,231 @@
   "pointsPerSet": {
     "default": 25,
     "options": [
-      { "value": 10, "label": "A 10" },
-      { "value": 15, "label": "A 15" },
-      { "value": 20, "label": "A 20" },
-      { "value": 21, "label": "A 21" },
-      { "value": 25, "label": "A 25" }
+      {
+        "value": 10,
+        "label": "A 10"
+      },
+      {
+        "value": 15,
+        "label": "A 15"
+      },
+      {
+        "value": 20,
+        "label": "A 20"
+      },
+      {
+        "value": 21,
+        "label": "A 21"
+      },
+      {
+        "value": 25,
+        "label": "A 25"
+      }
     ]
   },
   "decidingSetPoints": {
     "default": 15,
     "options": [
-      { "value": 10, "label": "A 10" },
-      { "value": 15, "label": "A 15" },
-      { "value": 20, "label": "A 20" },
-      { "value": 21, "label": "A 21" },
-      { "value": 25, "label": "A 25" }
+      {
+        "value": 10,
+        "label": "A 10"
+      },
+      {
+        "value": 15,
+        "label": "A 15"
+      },
+      {
+        "value": 20,
+        "label": "A 20"
+      },
+      {
+        "value": 21,
+        "label": "A 21"
+      },
+      {
+        "value": 25,
+        "label": "A 25"
+      }
     ]
   },
   "totalSets": {
     "default": 0,
     "options": [
-      { "value": 0, "label": "Sin límite (partido abierto)" },
-      { "value": 1, "label": "1 set" },
-      { "value": 3, "label": "Mejor de 3" },
-      { "value": 5, "label": "Mejor de 5" }
+      {
+        "value": 0,
+        "label": "Sin límite (partido abierto)"
+      },
+      {
+        "value": 1,
+        "label": "1 set"
+      },
+      {
+        "value": 3,
+        "label": "Mejor de 3"
+      },
+      {
+        "value": 5,
+        "label": "Mejor de 5"
+      }
     ]
   },
   "rotation": {
     "default": "winnerStays",
     "options": [
-      { "value": "winnerStays", "label": "Ganador se queda, entra el siguiente" },
-      { "value": "none", "label": "Mismos equipos" }
+      {
+        "value": "winnerStays",
+        "label": "Ganador se queda, entra el siguiente"
+      },
+      {
+        "value": "none",
+        "label": "Mismos equipos"
+      }
     ]
   },
   "teamCount": {
     "default": 2,
     "options": [
-      { "value": 2, "label": "2 equipos" },
-      { "value": 3, "label": "3 equipos" },
-      { "value": 4, "label": "4 equipos" },
-      { "value": 5, "label": "5 equipos" },
-      { "value": 6, "label": "6 equipos" }
+      {
+        "value": 2,
+        "label": "2 equipos"
+      },
+      {
+        "value": 3,
+        "label": "3 equipos"
+      },
+      {
+        "value": 4,
+        "label": "4 equipos"
+      },
+      {
+        "value": 5,
+        "label": "5 equipos"
+      },
+      {
+        "value": 6,
+        "label": "6 equipos"
+      }
     ]
   },
   "teamColors": [
-    { "value": "#1e6fd9", "label": "AZUL" },
-    { "value": "#d62f4b", "label": "ROJO" },
-    { "value": "#1f9d55", "label": "VERDE" },
-    { "value": "#e0a100", "label": "AMARILLO" },
-    { "value": "#8e44ad", "label": "MORADO" },
-    { "value": "#e8590c", "label": "NARANJA" },
-    { "value": "#0ea5e9", "label": "CELESTE" },
-    { "value": "#db2777", "label": "ROSADO" },
-    { "value": "#4b5563", "label": "GRIS" },
-    { "value": "#7c4a1e", "label": "CAFÉ" }
+    {
+      "value": "#1e6fd9",
+      "label": "AZUL"
+    },
+    {
+      "value": "#d62f4b",
+      "label": "ROJO"
+    },
+    {
+      "value": "#1f9d55",
+      "label": "VERDE"
+    },
+    {
+      "value": "#e0a100",
+      "label": "AMARILLO"
+    },
+    {
+      "value": "#8e44ad",
+      "label": "MORADO"
+    },
+    {
+      "value": "#e8590c",
+      "label": "NARANJA"
+    },
+    {
+      "value": "#0ea5e9",
+      "label": "CELESTE"
+    },
+    {
+      "value": "#db2777",
+      "label": "ROSADO"
+    },
+    {
+      "value": "#4b5563",
+      "label": "GRIS"
+    },
+    {
+      "value": "#7c4a1e",
+      "label": "CAFÉ"
+    }
   ],
   "doubleTapMs": {
     "default": 350,
     "options": [
-      { "value": 250, "label": "250 ms" },
-      { "value": 300, "label": "300 ms" },
-      { "value": 350, "label": "350 ms" },
-      { "value": 400, "label": "400 ms" },
-      { "value": 450, "label": "450 ms" },
-      { "value": 500, "label": "500 ms" }
+      {
+        "value": 250,
+        "label": "250 ms"
+      },
+      {
+        "value": 300,
+        "label": "300 ms"
+      },
+      {
+        "value": 350,
+        "label": "350 ms"
+      },
+      {
+        "value": 400,
+        "label": "400 ms"
+      },
+      {
+        "value": 450,
+        "label": "450 ms"
+      },
+      {
+        "value": 500,
+        "label": "500 ms"
+      }
     ]
   },
   "voiceRepeat": {
     "default": 1,
     "options": [
-      { "value": 1, "label": "1 vez" },
-      { "value": 2, "label": "2 veces" },
-      { "value": 3, "label": "3 veces" },
-      { "value": 4, "label": "4 veces" },
-      { "value": 5, "label": "5 veces" }
+      {
+        "value": 1,
+        "label": "1 vez"
+      },
+      {
+        "value": 2,
+        "label": "2 veces"
+      },
+      {
+        "value": 3,
+        "label": "3 veces"
+      },
+      {
+        "value": 4,
+        "label": "4 veces"
+      },
+      {
+        "value": 5,
+        "label": "5 veces"
+      }
     ]
   },
   "voiceLang": {
-    "default": "es-ES",
+    "default": "es-CO",
     "options": [
-      { "value": "es-ES", "label": "Español (España)" },
-      { "value": "es-MX", "label": "Español (México)" },
-      { "value": "es-US", "label": "Español (EE. UU.)" },
-      { "value": "en-US", "label": "English" }
+      {
+        "value": "es-CO",
+        "label": "Español (Colombia)"
+      },
+      {
+        "value": "es-MX",
+        "label": "Español (México)"
+      },
+      {
+        "value": "es-US",
+        "label": "Español (Latinoamérica / EE. UU.)"
+      },
+      {
+        "value": "es-ES",
+        "label": "Español (España)"
+      },
+      {
+        "value": "en-US",
+        "label": "English"
+      }
     ]
   }
 }

@@ -295,8 +295,7 @@
   $('voiceForm').onsubmit = e => { e.preventDefault(); run({ type: 'setVoice', voice: voiceCfg() }, 'Voz guardada'); };
   $('vTest').onclick = () => {
     if (!state) return;
-    const [A, B] = state.teams;
-    if (!DC.speak(`${A.name}: ${state.points[0]}. ${B.name}: ${state.points[1]}.`, voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
+    if (!DC.speak(DC.scoreSpeech(state), voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
   };
   $('scoreForm').onsubmit = async e => {
     e.preventDefault();

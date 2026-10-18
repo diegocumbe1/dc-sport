@@ -253,3 +253,19 @@ test('opciones de puntos desde options.json: 10, 15, 20, 21, 25', () => {
   assert.equal(apply(g, { type: 'setConfig', pointsPerSet: 30 }, { admin: true }).ok, false);
   assert.equal(apply(g, { type: 'target', target: 20 }).ok, false, 'solo en 0-0');
 });
+
+test('saque: lo tiene quien ganó el último punto; deshacer lo revierte; nuevo set lo limpia', () => {
+  const g = makeGame();
+  assert.equal(g.serve, null);
+  pt(g, 1);
+  assert.equal(g.serve, 1);
+  pt(g, 0);
+  assert.equal(g.serve, 0);
+  apply(g, { type: 'undo' });
+  assert.equal(g.serve, 1, 'deshacer devuelve el saque');
+  pt(g, 1, -1);
+  assert.equal(g.serve, 1, 'una resta no cambia el saque');
+  score(g, 25, 0);
+  apply(g, { type: 'nextSet' });
+  assert.equal(g.serve, null);
+});

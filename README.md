@@ -67,7 +67,10 @@ ADMIN_PIN=5678 npm start
 ### Administración (`/admin`)
 
 - Equipos (2 a 6, nombre y color), equipos en cancha, puntos por set y regla de rotación.
-- **Voz del marcador**: activar/desactivar, velocidad, repeticiones, segundos entre repeticiones e idioma. En la pantalla del marcador hay que tocar **«🔊 Activar voz»** una vez, porque los navegadores no dejan hablar sin una interacción. Ejemplo de anuncio: «AZUL: 6. ROJO: 4.»
+- **Voz del marcador**: activar/desactivar, velocidad, repeticiones, segundos entre repeticiones e idioma (Español Colombia por defecto). En la pantalla del marcador hay que tocar **«🔊 Activar voz»** una vez, porque los navegadores no dejan hablar sin una interacción.
+  - **Orden de canto:** primero el equipo con el saque, es decir, el que ganó el último punto (regla de rally). Ejemplos: «Rojo, 7. Azul, 6.», «Empate a 5. Saca Rojo.», «Azul, 24. Rojo, 23. Punto de set para Azul.», «¡Set para Rojo! Quedó 25 a 23.». El marcador muestra 🏐 junto al equipo que saca.
+  - **Elegir voz:** el botón ⚙ del marcador lista las voces de ese dispositivo; ⭐ marca las naturales. Si no se elige ninguna, se toma la mejor: es-CO, luego otras latinoamericanas, y se prefieren las voces neuronales o en línea.
+  - **Voz colombiana natural (gratis):** abre el marcador en **Microsoft Edge**, que ofrece las voces neuronales «Salomé» y «Gonzalo» (Español, Colombia). En Chrome, la más cercana es «Google español de Estados Unidos». macOS no trae voces colombianas.
 - Corrección manual de puntos y sets, deshacer, restablecer marcador y nuevo partido.
 - **Salas guardadas**: lista de salas, borrar una sala o **borrar todas** (hay que escribir BORRAR en el modal).
 - El PIN se recuerda en ese navegador hasta 4 horas.

@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
   decidingSetPoints: OPTIONS.decidingSetPoints.default,
   rotation: OPTIONS.rotation.default,
 };
-const DEFAULT_VOICE = { enabled: false, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default };
+const DEFAULT_VOICE = { enabled: false, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, v: 2 };
 
 const defaultTeam = i => ({ name: PALETTE[i % PALETTE.length].label, color: PALETTE[i % PALETTE.length].value });
 // Nombre por defecto de un equipo sin nombre: el nombre de su color, o «EQUIPO N» si el color no está en la paleta.
@@ -54,6 +54,7 @@ function makeGame(prev) {
     currentSet: 1,
     // playing | setOver (esperando confirmación del siguiente set) | matchOver
     phase: 'playing',
+    serve: null, // lado con el saque: quien ganó el último punto (rally point)
     setWinner: null, // lado ganador del set
     matchWinner: null, // lado ganador del partido (solo con 2 equipos)
     setResults: [],
@@ -74,7 +75,7 @@ const courtSets = g => g.court.map(i => g.teamSets[i]);
 
 // Campos que se guardan en cada instantánea para poder deshacer
 // (la voz no: es un ajuste del marcador, no parte del partido).
-const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'setWinner', 'matchWinner', 'setResults'];
+const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'serve', 'setWinner', 'matchWinner', 'setResults'];
 function snapshot(g) {
   return JSON.parse(JSON.stringify(Object.fromEntries(SNAP_KEYS.map(k => [k, g[k]]))));
 }
@@ -149,6 +150,8 @@ function apply(g, cmd, { admin = false } = {}) {
       if (delta === -1 && g.points[side] === 0) return fail('El puntaje no puede ser negativo');
       pushUndo(g, `${delta > 0 ? '+1' : '−1'} ${sideName(side)}`);
       g.points[side] += delta;
+      // Quien gana el rally pasa a sacar. Una resta (corrección) no cambia el saque; deshacer sí lo revierte.
+      if (delta > 0) g.serve = side;
       addLog(g, `${delta > 0 ? '+1' : '−1'} ${sideName(side)} (${g.points[0]}-${g.points[1]})`, by);
       evaluateSet(g);
       if (g.phase === 'setOver') addLog(g, `Set ${g.currentSet} para ${sideName(g.setWinner)}`, 'sistema');
@@ -170,6 +173,7 @@ function apply(g, cmd, { admin = false } = {}) {
       const change = wantRotate ? rotate(g) : null;
       g.currentSet++;
       g.points = [0, 0];
+      g.serve = null; // el primer saque del set se define con el primer punto
       g.phase = 'playing';
       g.setWinner = null;
       addLog(g, `Comienza el set ${g.currentSet}${change ? `: entra ${name(change.inn)}, sale ${name(change.out)}` : ''}`, by);
@@ -180,6 +184,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (g.points[0] === 0 && g.points[1] === 0) return fail('El set ya está en 0-0');
       pushUndo(g, `Reinicio set ${g.currentSet}`);
       g.points = [0, 0];
+      g.serve = null;
       addLog(g, `Puntos del set ${g.currentSet} reiniciados`, by);
       break;
     }
@@ -240,6 +245,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (g.phase !== 'playing' || g.points.some(p => p !== 0)) return fail('Solo con el set en 0-0');
       pushUndo(g, 'Cambio de equipos en cancha');
       g.court = [...c];
+      g.serve = null;
       g.queue = [...g.queue.filter(i => !c.includes(i)), ...g.teams.map((_, i) => i).filter(i => !c.includes(i) && !g.queue.includes(i))];
       addLog(g, `En cancha: ${name(c[0])} vs ${name(c[1])}`, by);
       break;
@@ -291,7 +297,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (!nonNegInt(v.repeat, VOICE_REPEAT_MAX) || v.repeat < 1) return fail(`Repeticiones entre 1 y ${VOICE_REPEAT_MAX}`);
       if (!inRange(v.interval, 1, 30)) return fail('Intervalo entre 1 y 30 segundos');
       const lang = VOICE_LANGS.includes(v.lang) ? v.lang : DEFAULT_VOICE.lang;
-      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang };
+      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang, v: 2 };
       addLog(g, `Voz ${v.enabled ? `activada (x${v.repeat}, cada ${v.interval} s, vel. ${g.voice.rate})` : 'desactivada'}`, by);
       break;
     }
@@ -311,6 +317,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (!openMatch(g) && teamSets.filter(s => s >= setsToWin(g)).length > 1) return fail('Ambos equipos no pueden ganar el partido');
       pushUndo(g, 'Corrección de marcador');
       g.points = [...points];
+      g.serve = null;
       g.teamSets = [...teamSets];
       g.currentSet = teamSets.reduce((a, b) => a + b, 0) + 1;
       g.setResults = g.setResults.filter(r => r.set < g.currentSet);
@@ -361,6 +368,7 @@ function publicState(room, g) {
     config: g.config,
     voice: g.voice,
     points: g.points,
+    serve: g.serve,
     currentSet: g.currentSet,
     target: targetPoints(g),
     decidingSet: isDecidingSet(g),
@@ -393,6 +401,11 @@ function hydrate(raw) {
   if (!Array.isArray(raw.queue)) g.queue = g.teams.map((_, i) => i).slice(2);
   g.config = { ...makeGame().config, ...g.config };
   g.voice = { ...DEFAULT_VOICE, ...g.voice };
+  // Migración única: antes el idioma por defecto era es-ES; ahora es es-CO.
+  if (!g.voice.v) {
+    if (g.voice.lang === 'es-ES') g.voice.lang = DEFAULT_VOICE.lang;
+    g.voice.v = 2;
+  }
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];
   return g;

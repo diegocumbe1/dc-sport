@@ -138,9 +138,73 @@
   // Un anuncio nuevo cancela las repeticiones pendientes del anterior.
   let voiceTimer = null;
   const voiceSupported = 'speechSynthesis' in window;
+
+  // Orden de preferencia de acentos: para Colombia, primero es-CO y luego otras voces latinoamericanas.
+  const LANG_CHAINS = {
+    'es-CO': ['es-CO', 'es-419', 'es-US', 'es-MX', 'es'],
+    'es-MX': ['es-MX', 'es-419', 'es-US', 'es-CO', 'es'],
+    'es-US': ['es-US', 'es-419', 'es-MX', 'es-CO', 'es'],
+  };
+  // Voces que suelen sonar naturales (neuronales / en línea / mejoradas) y voces "de efecto" a evitar.
+  const NATURAL_RE = /natural|neural|online|premium|enhanced|mejorad|google|siri/i;
+  const NOVELTY_RE = /eddy|flo\b|grandma|grandpa|reed|rocko|sandy|shelley|bad news|bells|boing|bubbles|cellos|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|fred|junior|ralph|kathy/i;
+  const normLang = l => String(l || '').replace('_', '-');
+
+  function voiceScore(v, lang) {
+    const chain = LANG_CHAINS[lang] || [lang, lang.slice(0, 2)];
+    const vl = normLang(v.lang);
+    let idx = chain.findIndex(c => vl === c || (c.length === 2 && vl.slice(0, 2) === c));
+    if (idx === -1) return -1; // otro idioma
+    let score = (chain.length - idx) * 100;
+    if (NATURAL_RE.test(v.name)) score += 60;
+    if (NOVELTY_RE.test(v.name)) score -= 80;
+    if (!v.localService) score += 10; // las voces en línea suelen ser más naturales
+    return score;
+  }
+  // Voces disponibles en ESTE dispositivo para el idioma, de mejor a peor.
+  function listVoices(lang = 'es-CO') {
+    if (!voiceSupported) return [];
+    return speechSynthesis.getVoices()
+      .map(v => ({ v, score: voiceScore(v, lang) }))
+      .filter(x => x.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .map(x => ({ voice: x.v, name: x.v.name, lang: normLang(x.v.lang), natural: NATURAL_RE.test(x.v.name), score: x.score }));
+  }
+  // La voz elegida a mano en este dispositivo (DC.local 'voiceName') tiene prioridad.
   function pickVoice(lang) {
-    const voices = speechSynthesis.getVoices();
-    return voices.find(v => v.lang === lang) || voices.find(v => v.lang.slice(0, 2) === lang.slice(0, 2)) || null;
+    const list = listVoices(lang);
+    const chosen = local.get('voiceName');
+    return (chosen && list.find(x => x.name === chosen)) || list[0] || null;
+  }
+  // Algunos navegadores cargan las voces de forma asíncrona.
+  function onVoicesReady(fn) {
+    if (!voiceSupported) return;
+    if (speechSynthesis.getVoices().length) fn();
+    speechSynthesis.addEventListener('voiceschanged', fn);
+  }
+
+  // Texto hablado del marcador. Nombres en formato "Azul" (en MAYÚSCULAS algunas voces deletrean).
+  const spoken = n => String(n).toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+  function scoreSpeech(s) {
+    const [A, B] = s.teams.map(t => spoken(t.name));
+    const [a, b] = s.points;
+    if (s.phase === 'matchOver') {
+      return `¡${spoken(s.teams[s.matchWinner].name)} gana el partido! Sets, ${s.sets[s.matchWinner]} a ${s.sets[1 - s.matchWinner]}.`;
+    }
+    if (s.phase === 'setOver') {
+      const w = s.setWinner;
+      const next = s.rotationMode && s.nextIn !== null ? ` Se prepara ${spoken(s.allTeams[s.nextIn].name)}.` : '';
+      return `¡Set para ${spoken(s.teams[w].name)}! Quedó ${s.points[w]} a ${s.points[1 - w]}.${next}`;
+    }
+    if (a === b && a === 0) return `${A} contra ${B}. Cero a cero.`;
+    // Regla de canto: primero el equipo que tiene el saque (quien ganó el último punto).
+    const first = s.serve === 1 ? 1 : 0;
+    const names = [A, B];
+    if (a === b) return `Empate a ${a}. Saca ${names[first]}.`;
+    let text = `${names[first]}, ${s.points[first]}. ${names[1 - first]}, ${s.points[1 - first]}.`;
+    const lead = a > b ? 0 : 1;
+    if (Math.max(a, b) >= s.target - 1) text += ` Punto de set para ${names[lead]}.`;
+    return text;
   }
   function stopSpeaking() {
     clearTimeout(voiceTimer);
@@ -149,14 +213,14 @@
   function speak(text, cfg) {
     if (!voiceSupported) return false;
     stopSpeaking();
-    const c = { rate: 1, repeat: 1, interval: 3, lang: 'es-ES', ...cfg };
+    const c = { rate: 1, repeat: 1, interval: 3, lang: 'es-CO', ...cfg };
     let done = 0;
     const once = () => {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = c.lang;
-      u.rate = c.rate;
       const v = pickVoice(c.lang);
-      if (v) u.voice = v;
+      u.lang = v ? v.lang : c.lang;
+      u.rate = c.rate;
+      if (v) u.voice = v.voice;
       u.onend = () => {
         done++;
         if (done < c.repeat) voiceTimer = setTimeout(once, c.interval * 1000);
@@ -236,5 +300,5 @@
     return true;
   }
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal };
+  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech };
 })();
