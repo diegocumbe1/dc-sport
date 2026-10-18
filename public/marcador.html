@@ -83,76 +83,14 @@
       if (lead >= s.target - 1 && a !== b) status = `<span class="sb-status">PUNTO DE SET · ${DC.esc(s.teams[a > b ? 0 : 1].name)}</span>`;
     }
     $('bottom').innerHTML = chips.join('') + status;
-    voiceOnChange(last, s);
+    voice.update(s);
     last = s;
   }
 
-  // ---------- Voz ----------
-  // Los navegadores solo permiten hablar después de un toque/clic en la página.
-  let voiceOn = false;
-  let voiceDebounce = null;
-  // Texto en common.js (DC.scoreSpeech): nombra primero al equipo con el saque.
-  const voiceText = s => DC.scoreSpeech(s);
-  // Botón siempre visible con el estado de la voz:
-  //   apagada en la sala → explica dónde activarla; activada → hay que tocar una vez; activa → pausar.
-  function paintVoiceBtn(s) {
-    const btn = $('voiceBtn');
-    const enabled = s && s.voice && s.voice.enabled;
-    btn.classList.toggle('hidden', !DC.voiceSupported);
-    btn.className = enabled && !voiceOn ? 'ok' : 'alt';
-    btn.textContent = !enabled ? '🔇 Voz apagada' : voiceOn ? '🔊 Voz activa' : '🔊 Activar voz';
-  }
-  function voiceOnChange(prev, s) {
-    const enabled = s.voice && s.voice.enabled && DC.voiceSupported;
-    paintVoiceBtn(s);
-    if (!enabled) { DC.stopSpeaking(); return; }
-    if (!voiceOn || !prev) return;
-    const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet;
-    if (!changed) return;
-    // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
-    clearTimeout(voiceDebounce);
-    voiceDebounce = setTimeout(() => DC.speak(voiceText(last), last.voice), 600);
-  }
-  $('voiceBtn').onclick = () => {
-    if (!last || !last.voice || !last.voice.enabled) {
-      DC.toast('La voz está apagada para esta sala. Actívala en Administración → «Voz del marcador» o al crear el tablero.');
-      return;
-    }
-    voiceOn = !voiceOn;
-    if (voiceOn) DC.speak(voiceText(last), { ...last.voice, repeat: 1 });
-    else { DC.stopSpeaking(); DC.toast('Voz en pausa en esta pantalla'); }
-    paintVoiceBtn(last);
-  };
-  if (!DC.voiceSupported) { $('voiceBtn').classList.add('hidden'); $('voicePick').classList.add('hidden'); }
-
-  // ---------- Elegir voz de este dispositivo ----------
-  // Las voces dependen del navegador/sistema donde corre el marcador, por eso se eligen aquí.
-  $('voicePick').onclick = () => {
-    const lang = (last && last.voice && last.voice.lang) || 'es-CO';
-    const list = DC.listVoices(lang);
-    const current = DC.pickVoice(lang);
-    const hasCO = list.some(v => v.lang === 'es-CO');
-    const ov = document.createElement('div');
-    ov.className = 'overlay';
-    ov.innerHTML = `<div class="box" style="text-align:left">
-      <h2 style="text-align:center">Voz de esta pantalla</h2>
-      ${list.length ? `<select id="vpSel" style="width:100%;padding:10px;border-radius:10px;background:#0c1220;color:var(--text);border:1px solid var(--line);font-size:16px">
-        ${list.map(v => `<option value="${DC.esc(v.name)}"${current && v.name === current.name ? ' selected' : ''}>${v.natural ? '⭐ ' : ''}${DC.esc(v.name)} · ${v.lang}</option>`).join('')}
-      </select>` : '<p>No hay voces en español en este navegador.</p>'}
-      <p class="muted" style="font-size:14px">⭐ = voz natural (neuronal / en línea). La lista sale de este navegador; se recuerda máx. 4 h.</p>
-      ${hasCO ? '' : `<p class="muted" style="font-size:14px">No hay voz colombiana en este navegador. Para una voz colombiana natural y gratuita abre el marcador en <b>Microsoft Edge</b> (voces «Salomé» y «Gonzalo», Español Colombia). En Chrome, la más cercana es «Google español de Estados Unidos».</p>`}
-      <div class="row"><button class="alt" data-a="test">▶ Probar</button><button class="alt" data-a="close">Cerrar</button><button class="ok" data-a="save">Usar esta voz</button></div></div>`;
-    document.body.appendChild(ov);
-    const sel = ov.querySelector('#vpSel');
-    ov.addEventListener('click', e => {
-      const a = e.target.dataset.a;
-      if (e.target === ov || a === 'close') return ov.remove();
-      if (!sel) return;
-      if (a === 'test' || a === 'save') DC.local.set('voiceName', sel.value);
-      if (a === 'test') DC.speak(last ? voiceText(last) : 'Azul, 6. Rojo, 4.', { ...(last && last.voice), repeat: 1 });
-      if (a === 'save') { DC.toast('Voz guardada: ' + sel.value, 'good'); ov.remove(); }
-    });
-  };
+  // ---------- Voz (lógica compartida en common.js: DC.voiceAnnouncer) ----------
+  const voice = DC.voiceAnnouncer({ btn: $('voiceBtn') });
+  if (!DC.voiceSupported) $('voicePick').classList.add('hidden');
+  $('voicePick').onclick = () => DC.voicePicker(last);
 
   DC.connect({
     role: 'marcador',

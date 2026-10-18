@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
   decidingSetPoints: OPTIONS.decidingSetPoints.default,
   rotation: OPTIONS.rotation.default,
 };
-const DEFAULT_VOICE = { enabled: false, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, v: 2 };
+const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, v: 2 };
 
 const defaultTeam = i => ({ name: PALETTE[i % PALETTE.length].label, color: PALETTE[i % PALETTE.length].value });
 // Nombre por defecto de un equipo sin nombre: el nombre de su color, o «EQUIPO N» si el color no está en la paleta.

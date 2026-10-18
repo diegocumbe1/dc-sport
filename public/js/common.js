@@ -170,11 +170,16 @@
       .sort((a, b) => b.score - a.score)
       .map(x => ({ voice: x.v, name: x.v.name, lang: normLang(x.v.lang), natural: NATURAL_RE.test(x.v.name), score: x.score }));
   }
-  // La voz elegida a mano en este dispositivo (DC.local 'voiceName') tiene prioridad.
+  // Voz por defecto cuando el dispositivo la tiene (Chrome): «Google español» (es-ES).
+  const DEFAULT_VOICE_NAME = 'Google español';
+  // La voz elegida a mano en este dispositivo (DC.local 'voiceName') tiene prioridad;
+  // luego la voz por defecto, y si no existe, la mejor según el idioma de la sala.
   function pickVoice(lang) {
     const list = listVoices(lang);
     const chosen = local.get('voiceName');
-    return (chosen && list.find(x => x.name === chosen)) || list[0] || null;
+    return (chosen && list.find(x => x.name === chosen))
+      || list.find(x => x.name === DEFAULT_VOICE_NAME)
+      || list[0] || null;
   }
   // Algunos navegadores cargan las voces de forma asíncrona.
   function onVoicesReady(fn) {
@@ -231,6 +236,83 @@
     return true;
   }
   if (voiceSupported) speechSynthesis.getVoices(); // precarga la lista de voces
+
+  // ---------- Anunciador por voz (compartido por marcador y control) ----------
+  // Lo usan el marcador (modo dos pantallas) y el control (modo un solo dispositivo: celular +
+  // parlante Bluetooth). Ambos reciben el mismo estado de la sala; solo cambia dónde suena.
+  // Los navegadores solo dejan hablar después de un toque, por eso `voiceOn` arranca apagado
+  // en cada carga y se activa con el botón (o con `unlock()` desde otro toque del usuario).
+  function voiceAnnouncer({ btn, labels = {} }) {
+    const L = { off: '🔇 Voz apagada', idle: '🔊 Activar voz', on: '🔊 Voz activa', ...labels };
+    let voiceOn = false;
+    let last = null;
+    let debounce = null;
+    const enabledInRoom = s => !!(s && s.voice && s.voice.enabled);
+    function paint() {
+      if (!btn) return;
+      const enabled = enabledInRoom(last);
+      btn.className = enabled && !voiceOn ? 'ok' : 'alt';
+      btn.classList.toggle('hidden', !voiceSupported);
+      btn.textContent = !enabled ? L.off : voiceOn ? L.on : L.idle;
+    }
+    // Llamar en cada estado recibido.
+    function update(s) {
+      const prev = last;
+      last = s;
+      paint();
+      if (!enabledInRoom(s) || !voiceSupported) { stopSpeaking(); return; }
+      if (!voiceOn || !prev) return;
+      const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet;
+      if (!changed) return;
+      // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
+      clearTimeout(debounce);
+      debounce = setTimeout(() => speak(scoreSpeech(last), last.voice), 600);
+    }
+    // Debe llamarse dentro de un toque/clic del usuario (desbloquea el audio en móviles).
+    function unlock() {
+      if (!voiceSupported) { toast('Este navegador no soporta voz', 'bad'); return false; }
+      if (!enabledInRoom(last)) {
+        toast('La voz está apagada para esta sala. Actívala en Administración → «Voz del marcador» o al crear el tablero.');
+        return false;
+      }
+      voiceOn = true;
+      speak(scoreSpeech(last), { ...last.voice, repeat: 1 });
+      paint();
+      return true;
+    }
+    function pause() { voiceOn = false; stopSpeaking(); toast('Voz en pausa en esta pantalla'); paint(); }
+    if (btn) btn.addEventListener('click', () => (voiceOn ? pause() : unlock()));
+    paint();
+    return { update, unlock, pause, isOn: () => voiceOn, state: () => last };
+  }
+
+  // Modal para elegir la voz de ESTE dispositivo (las voces dependen del navegador/sistema).
+  function voicePicker(s) {
+    const lang = (s && s.voice && s.voice.lang) || 'es-CO';
+    const list = listVoices(lang);
+    const current = pickVoice(lang);
+    const hasCO = list.some(v => v.lang === 'es-CO');
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.innerHTML = `<div class="box" style="text-align:left">
+      <h2 style="text-align:center">Voz de esta pantalla</h2>
+      ${list.length ? `<select id="vpSel" style="width:100%;padding:10px;border-radius:10px;background:#0c1220;color:var(--text);border:1px solid var(--line);font-size:16px">
+        ${list.map(v => `<option value="${esc(v.name)}"${current && v.name === current.name ? ' selected' : ''}>${v.natural ? '⭐ ' : ''}${esc(v.name)} · ${v.lang}</option>`).join('')}
+      </select>` : '<p>No hay voces en español en este navegador.</p>'}
+      <p class="muted" style="font-size:14px">⭐ = voz natural (neuronal / en línea). La lista sale de este navegador; se recuerda máx. 4 h.</p>
+      ${hasCO ? '' : `<p class="muted" style="font-size:14px">No hay voz colombiana en este navegador. Para una voz colombiana natural y gratuita abre la página en <b>Microsoft Edge</b> (voces «Salomé» y «Gonzalo», Español Colombia). En Chrome, la más cercana es «Google español de Estados Unidos».</p>`}
+      <div class="row"><button class="alt" data-a="test">▶ Probar</button><button class="alt" data-a="close">Cerrar</button><button class="ok" data-a="save">Usar esta voz</button></div></div>`;
+    document.body.appendChild(ov);
+    const sel = ov.querySelector('#vpSel');
+    ov.addEventListener('click', e => {
+      const a = e.target.dataset.a;
+      if (e.target === ov || a === 'close') return ov.remove();
+      if (!sel) return;
+      if (a === 'test' || a === 'save') local.set('voiceName', sel.value);
+      if (a === 'test') speak(s ? scoreSpeech(s) : 'Azul, 6. Rojo, 4.', { ...(s && s.voice), repeat: 1 });
+      if (a === 'save') { toast('Voz guardada: ' + sel.value, 'good'); ov.remove(); }
+    });
+  }
 
   // ---------- Opciones de listas desplegables (config/options.json) ----------
   let optionsPromise = null;
@@ -300,5 +382,5 @@
     return true;
   }
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech };
+  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, voiceAnnouncer, voicePicker };
 })();

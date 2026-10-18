@@ -227,7 +227,7 @@ test('hydrate migra el formato anterior (sets por lado)', () => {
   assert.deepEqual(g.teamSets, [2, 1]);
   assert.deepEqual(g.court, [0, 1]);
   assert.equal(g.config.rotation, 'winnerStays');
-  assert.equal(g.voice.enabled, false);
+  assert.equal(g.voice.enabled, true); // voz activa por defecto
 });
 
 test('por defecto partido abierto: 2 equipos sin fin automático', () => {

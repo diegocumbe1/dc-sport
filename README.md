@@ -38,6 +38,7 @@ ADMIN_PIN=5678 npm start
 | `/marcador?sala=voley`               | Pantalla del marcador (TV/PC), con pantalla completa y voz opcional           |
 | `/control?sala=voley`                | Control de ambos equipos (celular en horizontal)                               |
 | `/control?sala=voley&equipo=a`       | Control de **un solo lado** (izquierdo = A, derecho = B), como un pulsador     |
+| `/control?sala=voley&modo=uno`       | **Solo celular**: control + marcador + voz (con parlante Bluetooth, sin TV)     |
 | `/admin?sala=voley`                  | Administración protegida con PIN                                              |
 | `/api/health`                        | Estado del servidor (para Render)                                             |
 | `/api/rooms/:sala`                   | Estado de una sala en JSON (lectura)                                          |
@@ -67,9 +68,9 @@ ADMIN_PIN=5678 npm start
 ### Administración (`/admin`)
 
 - Equipos (2 a 6, nombre y color), equipos en cancha, puntos por set y regla de rotación.
-- **Voz del marcador**: activar/desactivar, velocidad, repeticiones, segundos entre repeticiones e idioma (Español Colombia por defecto). En la pantalla del marcador hay que tocar **«🔊 Activar voz»** una vez, porque los navegadores no dejan hablar sin una interacción.
+- **Voz del marcador** (activa por defecto): activar/desactivar, velocidad, repeticiones, segundos entre repeticiones e idioma (Español Colombia por defecto). Suena en el marcador (modo dos pantallas) o en el control (modo solo celular, `&modo=uno`, o botón 🔊 de la barra). En ese dispositivo hay que tocar **«🔊 Activar voz»** una vez, porque los navegadores no dejan hablar sin una interacción. Con la voz activa, el control mantiene la pantalla encendida.
   - **Orden de canto:** primero el equipo con el saque, es decir, el que ganó el último punto (regla de rally). Ejemplos: «Rojo, 7. Azul, 6.», «Empate a 5. Saca Rojo.», «Azul, 24. Rojo, 23. Punto de set para Azul.», «¡Set para Rojo! Quedó 25 a 23.». El marcador muestra 🏐 junto al equipo que saca.
-  - **Elegir voz:** el botón ⚙ del marcador lista las voces de ese dispositivo; ⭐ marca las naturales. Si no se elige ninguna, se toma la mejor: es-CO, luego otras latinoamericanas, y se prefieren las voces neuronales o en línea.
+  - **Elegir voz:** el botón ⚙ del marcador lista las voces de ese dispositivo; ⭐ marca las naturales. Si no se elige ninguna, se usa **«Google español» (es-ES)** cuando el navegador la tiene (Chrome); si no, la mejor: es-CO, luego otras latinoamericanas, y se prefieren las voces neuronales o en línea.
   - **Voz colombiana natural (gratis):** abre el marcador en **Microsoft Edge**, que ofrece las voces neuronales «Salomé» y «Gonzalo» (Español, Colombia). En Chrome, la más cercana es «Google español de Estados Unidos». macOS no trae voces colombianas.
 - Corrección manual de puntos y sets, deshacer, restablecer marcador y nuevo partido.
 - **Salas guardadas**: lista de salas, borrar una sala o **borrar todas** (hay que escribir BORRAR en el modal).
@@ -170,7 +171,7 @@ test/                     Pruebas (node:test)
 
 - La seguridad es básica: cualquiera que conozca el código de sala puede abrir un control; las acciones de administración piden PIN. No está pensado para torneos públicos.
 - Una sola instancia del servidor; no escala horizontalmente sin un almacén compartido.
-- La voz depende de las voces instaladas en el dispositivo del marcador, y requiere un toque en «Activar voz» cada vez que se carga la página.
+- La voz depende de las voces instaladas en el dispositivo que habla, y requiere un toque en «Activar voz» cada vez que se carga la página.
 - Si un celular pierde la red, su lugar en la sala se libera en unos 20 segundos.
 - Abrir cualquier vista con un código de sala nuevo crea esa sala. Las salas de prueba se borran desde Admin → «Salas guardadas».
 - Con 3 o más equipos no hay fin automático de partido, y el «mejor de N» está oculto por ahora.

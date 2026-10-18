@@ -15,9 +15,11 @@
   <div class="actions">
     <a id="screen">Abrir marcador</a>
     <a id="remote">Abrir control</a>
+    <a id="single">Solo celular (control + voz)</a>
     <a id="admin" class="alt">Administración</a>
   </div>
-  <p class="muted">Por sala: 1 marcador (PC/TV) y hasta 2 controles (celulares). Cada control puede manejar un lado (A o B) o ambos. Los dispositivos pueden estar en redes distintas si el servidor es público (ngrok, Render).</p>
+  <p class="muted"><b>Solo celular:</b> el control muestra los puntos y los anuncia por voz (sirve con parlante Bluetooth), sin TV ni otro dispositivo.</p>
+  <p class="muted">Dos pantallas · por sala: 1 marcador (PC/TV) y hasta 2 controles (celulares). Cada control puede manejar un lado (A o B) o ambos. Los dispositivos pueden estar en redes distintas si el servidor es público (ngrok, Render).</p>
 
   <!-- Aviso visible cuando la sala ya existe / se acaba de crear -->
   <section class="ready hidden" id="ready">
@@ -26,6 +28,7 @@
     <div class="actions">
       <a id="readyScreen">Abrir marcador</a>
       <a id="readyRemote">Abrir control</a>
+      <a id="readySingle">Solo celular (control + voz)</a>
     </div>
   </section>
 
@@ -45,9 +48,9 @@
       <h3 class="muted" style="font-size:14px;margin:14px 0 6px">Equipos · nombre opcional: si lo dejas vacío toma el nombre del color</h3>
       <div id="teamRows" class="grid2"></div>
       <label class="check" style="display:flex;gap:8px;align-items:center;margin-top:12px">
-        <input type="checkbox" id="voice"> 🔊 Anunciar el marcador por voz en la pantalla del marcador
+        <input type="checkbox" id="voice" checked> 🔊 Anunciar el marcador por voz (en el marcador o, en modo solo celular, en el control)
       </label>
-      <p class="muted" style="margin:4px 0 0;font-size:13px">Velocidad, repeticiones e intervalo se ajustan en Administración. En el marcador hay que tocar «Activar voz» una vez.</p>
+      <p class="muted" style="margin:4px 0 0;font-size:13px">Velocidad, repeticiones e intervalo se ajustan en Administración. En el dispositivo que habla hay que tocar «Activar voz» una vez.</p>
       <div class="btns"><button type="submit">Crear tablero</button></div>
       <p class="muted" id="setupNote">Si la sala ya tiene un marcador en curso se pedirá el PIN de administración.</p>
     </form>
@@ -77,6 +80,7 @@
     ['control', 'Control A', '&equipo=a'],
     ['control', 'Control B', '&equipo=b'],
     ['control', 'Control A+B'],
+    ['control', 'Solo celular (control + voz)', '&modo=uno'],
     ['admin', 'Admin'],
   ];
   const currentRoom = () => { const r = DC.cleanRoom(input.value); return r.length >= 3 ? r : 'voley'; };
@@ -86,6 +90,8 @@
     const q = '?sala=' + encodeURIComponent(r);
     $('screen').href = '/marcador' + q;
     $('remote').href = '/control' + q;
+    $('single').href = '/control' + q + '&modo=uno';
+    $('readySingle').href = '/control' + q + '&modo=uno';
     $('admin').href = '/admin' + q;
     $('readyScreen').href = '/marcador' + q;
     $('readyRemote').href = '/control' + q;
@@ -172,7 +178,7 @@
     DC.fillSelect($('rotation'), o.rotation, draft.rotation);
     drawRows(Number($('count').value), draft.teams || []);
   });
-  $('voice').checked = !!draft.voice;
+  $('voice').checked = draft.voice !== false; // voz activa por defecto
   $('count').onchange = () => { drawRows(Number($('count').value)); saveDraft(); };
   $('setupForm').addEventListener('input', saveDraft);
   $('setupForm').addEventListener('change', saveDraft);
@@ -262,7 +268,7 @@
       DC.fillSelect($('rotation'), o.rotation);
       drawRows(Number($('count').value), []);
     });
-    $('voice').checked = false;
+    $('voice').checked = true;
     render();
     checkRoom();
   };

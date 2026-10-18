@@ -15,6 +15,7 @@
   <div class="ctl-bar">
     <span class="conn" id="conn" data-status="connecting">Conectando…</span>
     <span class="info" id="info">Sala</span>
+    <button class="alt" id="voiceBtn" type="button">🔇</button>
     <button class="alt" id="undo" type="button">↶ Deshacer</button>
     <button class="alt" id="menuBtn" type="button">☰</button>
   </div>
@@ -45,6 +46,18 @@
   </div>
 </div>
 
+<!-- Modo un solo dispositivo (?modo=uno): el navegador exige un toque antes de poder hablar. -->
+<div class="overlay hidden" id="voiceStart">
+  <div class="box">
+    <h2>🔊 Un solo dispositivo</h2>
+    <p class="muted">Este celular es control, marcador y voz. Conecta el parlante Bluetooth y toca para activar los anuncios.</p>
+    <div class="row">
+      <button class="alt" id="vsSkip" type="button">Sin voz</button>
+      <button class="ok" id="vsGo" type="button">Activar voz</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="menu">
   <div class="box">
     <h2>Opciones</h2>
@@ -64,6 +77,7 @@
     <p class="muted" id="lastUndo"></p>
     <div class="row">
       <button class="alt" id="mFs" type="button">Pantalla completa</button>
+      <button class="alt" id="mVoicePick" type="button">⚙ Voz de este celular</button>
       <a class="muted" id="lnkScreen" target="_blank">Marcador</a>
       <a class="muted" id="lnkAdmin">Admin</a>
       <button class="alt" id="mClear" type="button">Borrar datos locales</button>
@@ -100,6 +114,28 @@
     document.querySelector('.ctl-pads').style.gridTemplateColumns = '1fr';
   }
 
+  // ---------- Voz en este celular (modo un solo dispositivo) ----------
+  // Mismo anunciador que el marcador (common.js); solo cambia dónde suena.
+  const voice = DC.voiceAnnouncer({ btn: $('voiceBtn'), labels: { off: '🔇', idle: '🔊 Activar voz', on: '🔊' } });
+  const singleDevice = DC.params.get('modo') === 'uno';
+  // Con la voz activa se mantiene la pantalla encendida: si el celular se bloquea, deja de anunciar.
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if (voice.isOn() && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', keepAwake);
+  $('voiceBtn').addEventListener('click', keepAwake);
+  if (singleDevice && DC.voiceSupported) $('voiceStart').classList.remove('hidden');
+  $('vsGo').onclick = () => {
+    if (!voice.state()) { DC.toast('Conectando con la sala…'); return; }
+    voice.unlock();
+    keepAwake();
+    $('voiceStart').classList.add('hidden');
+  };
+  $('vsSkip').onclick = () => $('voiceStart').classList.add('hidden');
+  $('mVoicePick').classList.toggle('hidden', !DC.voiceSupported);
+  $('mVoicePick').onclick = () => DC.voicePicker(state);
+
   const api = DC.connect({
     role: 'control',
     team: DC.team,
@@ -112,6 +148,7 @@
         if (prev.phase !== 'playing' && s.phase === 'playing') cooldownUntil = Date.now() + COOLDOWN_AFTER_SET_MS;
       }
       render();
+      voice.update(s);
     },
     onConnection: (st, err) => {
       online = st === 'online';
