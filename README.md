@@ -25,6 +25,18 @@ Variables de entorno opcionales (ver `.env.example`):
 | `ADMIN_PIN` | `1234`            | PIN de `/admin` y para reconfigurar salas con juego        |
 | `DATA_DIR`  | `./data`          | Carpeta de `scores.json`                                   |
 | `DATA_FILE` | `DATA_DIR/scores.json` | Ruta exacta del archivo de datos                      |
+| `SPOTIFY_CLIENT_ID` | — | Client ID de la app de Spotify para la música dentro del control (ver abajo) |
+
+### Música de Spotify con la voz (un solo iPhone)
+
+En iPhone, la app de Spotify y el navegador no pueden sonar a la vez: cualquier audio de la página pausa Spotify. La solución es que la música suene **dentro del control** con el reproductor web oficial de Spotify (Web Playback SDK, requiere **Spotify Premium**); así la voz del marcador suena encima.
+
+1. En [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) crea una app (gratis), marca **Web API** y agrega la Redirect URI `https://TU-DOMINIO/spotify`.
+2. Define `SPOTIFY_CLIENT_ID` con el Client ID de esa app.
+3. En modo desarrollo de Spotify solo pueden conectarse las cuentas agregadas en *User Management*.
+4. En el control (menú ☰ → «🎵 Conectar Spotify») cada celular inicia sesión una vez; la sesión de Spotify dura 30 días (excepción a la caché de 4 h). Luego, en la app de Spotify, elige el dispositivo **«DC Sport Score»**.
+
+La conexión ocurre directo entre el celular y Spotify: no usa recursos del servidor.
 
 ```bash
 ADMIN_PIN=5678 npm start

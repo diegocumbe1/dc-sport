@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spotify · DC Sport Score</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="landing" style="max-width:480px;margin:0 auto;padding:40px 16px;text-align:center">
+  <h1>🎵 Spotify</h1>
+  <p id="msg">Conectando con Spotify…</p>
+  <p><a id="back" class="hidden" href="/">← Volver</a></p>
+</div>
+<script src="/js/common.js"></script>
+<script>
+  // Regreso del inicio de sesión de Spotify: guarda la sesión y vuelve a la página de origen.
+  DC.spotify.finishLogin(new URLSearchParams(location.search))
+    .then(back => {
+      document.getElementById('msg').textContent = 'Spotify conectado ✔ Volviendo…';
+      location.replace(back || '/');
+    })
+    .catch(e => {
+      document.getElementById('msg').textContent = e.message;
+      document.getElementById('back').classList.remove('hidden');
+    });
+</script>
+</body>
+</html>

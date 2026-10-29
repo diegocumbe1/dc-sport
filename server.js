@@ -231,20 +231,13 @@ app.get('/marcador', page('marcador.html'));
 app.get('/control', page('control.html'));
 app.get('/admin', page('admin.html'));
 app.get('/guia', page('guia.html'));
+// Regreso del inicio de sesión de Spotify (Redirect URI registrada en la app de Spotify).
+app.get('/spotify', page('spotify.html'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, rooms: games.size, uptime: process.uptime() }));
-
-// Registro de depuración de /prueba-audio: los mensajes del celular se ven en la consola
-// y quedan en data/debug-audio.log (solo texto, recortado).
-const DEBUG_LOG = path.join(path.dirname(DATA_FILE), 'debug-audio.log');
-app.post('/api/debug-log', express.json({ limit: '4kb' }), (req, res) => {
-  const msg = String((req.body && req.body.msg) || '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').slice(0, 1500);
-  if (!msg) return res.status(400).json({ ok: false });
-  const line = `${new Date().toISOString()} [prueba-audio] ${msg}`;
-  console.log(line);
-  require('fs').appendFile(DEBUG_LOG, line + '\n', () => {});
-  res.json({ ok: true });
-});
+// Client ID de la app de Spotify (no es secreto: el inicio de sesión usa PKCE, sin clave privada).
+// La conexión con Spotify ocurre directo entre el celular y Spotify; el servidor no participa.
+app.get('/api/spotify-config', (req, res) => res.json({ clientId: process.env.SPOTIFY_CLIENT_ID || null }));
 app.get('/api/info', (req, res) => {
   const ips = Object.values(os.networkInterfaces()).flat()
     .filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);

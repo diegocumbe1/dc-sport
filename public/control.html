@@ -55,10 +55,12 @@
   <div class="box">
     <h2>🔊 Un solo dispositivo</h2>
     <p class="muted">Este celular es control, marcador y voz. Conecta el parlante Bluetooth y toca para activar los anuncios.</p>
+    <p class="muted" id="vsMusic" style="font-size:14px"></p>
     <div class="row">
       <button class="alt" id="vsSkip" type="button">Sin voz</button>
       <button class="ok" id="vsGo" type="button">Activar voz</button>
     </div>
+    <div class="row"><button class="alt" id="vsSpotify" type="button">🎵 Conectar Spotify (música + voz)</button></div>
   </div>
 </div>
 
@@ -79,6 +81,12 @@
       </label>
     </div>
     <p class="muted" id="lastUndo"></p>
+    <!-- Música de Spotify dentro de este celular: así la voz suena encima sin pausarla. -->
+    <div class="row">
+      <button class="alt" id="mSpotify" type="button">🎵 Conectar Spotify</button>
+      <button class="alt hidden" id="mSpotifyOut" type="button">Desconectar Spotify</button>
+    </div>
+    <p class="muted" id="spStatus" style="font-size:13px;margin:6px 0 0"></p>
     <div class="row">
       <button class="alt" id="mFs" type="button">Pantalla completa</button>
       <button class="alt" id="mVoicePick" type="button">⚙ Voz de este celular</button>
@@ -132,10 +140,12 @@
   // Mismo anunciador que el marcador (common.js); solo cambia dónde suena.
   const voice = DC.voiceAnnouncer({ btn: $('voiceBtn'), labels: { off: '🔇', idle: '🔊 Activar voz', on: '🔊' } });
   const singleDevice = DC.params.get('modo') === 'uno';
-  // Con la voz activa se mantiene la pantalla encendida: si el celular se bloquea, deja de anunciar.
+  // Con voz o música activas se mantiene la pantalla encendida: si el celular se bloquea,
+  // deja de anunciar y la música de Spotify en la página se detiene.
   let wakeLock = null;
+  let musicOn = false;
   async function keepAwake() {
-    try { if (voice.isOn() && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    try { if ((voice.isOn() || musicOn) && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
   }
   document.addEventListener('visibilitychange', keepAwake);
   $('voiceBtn').addEventListener('click', keepAwake);
@@ -143,9 +153,42 @@
   $('vsGo').onclick = () => {
     if (!voice.state()) { DC.toast('Conectando con la sala…'); return; }
     voice.unlock();
+    // Con Spotify conectado, el mismo toque pasa la música a este celular (iOS exige un toque).
+    if (DC.spotify.connected()) DC.spotify.play();
     keepAwake();
     $('voiceStart').classList.add('hidden');
   };
+
+  // ---------- Música de Spotify en este celular ----------
+  // En iPhone la app de Spotify se pausa con cualquier audio de la página; si la música suena
+  // aquí (dispositivo «DC Sport Score»), la voz del marcador suena encima.
+  const SP_TEXT = {
+    off: 'Sin conectar. Requiere Spotify Premium.',
+    connecting: 'Preparando el reproductor «DC Sport Score»…',
+    ready: 'Listo. Toca «🎵 Música aquí» o elige «DC Sport Score» en la app de Spotify.',
+    playing: '▶ Sonando en este celular. Cambia canciones desde la app de Spotify (dispositivo «DC Sport Score»).',
+    paused: '⏸ En pausa. Dale play desde la app de Spotify o toca «🎵 Música aquí».',
+  };
+  function paintSpotify(status = DC.spotify.connected() ? 'ready' : 'off', msg) {
+    const on = DC.spotify.connected();
+    if (status === 'playing' && !musicOn) { musicOn = true; keepAwake(); }
+    if (status === 'off') musicOn = false;
+    $('mSpotify').textContent = on ? '🎵 Música aquí' : '🎵 Conectar Spotify';
+    $('mSpotify').className = on ? 'ok' : 'alt';
+    $('mSpotifyOut').classList.toggle('hidden', !on);
+    const text = status === 'error' ? '⚠ ' + msg : SP_TEXT[status] + (status === 'playing' && msg ? ` · ${msg}` : '');
+    $('spStatus').textContent = 'Spotify: ' + text;
+    $('vsMusic').textContent = on ? '🎵 Spotify conectado: «Activar voz» también pone la música en este celular.' : '';
+    $('vsGo').textContent = on ? 'Activar voz y música' : 'Activar voz';
+    $('vsSpotify').classList.toggle('hidden', on);
+    if (status === 'error') DC.toast('Spotify: ' + msg, 'bad');
+  }
+  DC.spotify.onChange(paintSpotify);
+  paintSpotify();
+  DC.spotify.prepare(); // si ya hay sesión, deja el reproductor listo para el primer toque
+  $('mSpotify').onclick = () => { DC.spotify.play(); keepAwake(); };
+  $('vsSpotify').onclick = () => DC.spotify.login();
+  $('mSpotifyOut').onclick = () => { DC.spotify.logout(); DC.toast('Spotify desconectado de este celular'); };
   $('vsSkip').onclick = () => $('voiceStart').classList.add('hidden');
   // La voz es grabada (igual en todos los celulares); el selector solo aplica a la voz de respaldo.
   $('mVoicePick').classList.add('hidden');

@@ -631,8 +631,133 @@
     return true;
   }
 
+  // ---------- Spotify: música dentro de la página (Web Playback SDK, Premium) ----------
+  // En iPhone la app de Spotify y el navegador no pueden sonar a la vez (cualquier audio de la
+  // página pausa Spotify). Si la música suena en ESTA página (reproductor «DC Sport Score»),
+  // la voz del marcador suena encima. Inicio de sesión PKCE: el Client ID viene del servidor
+  // (SPOTIFY_CLIENT_ID) y todo lo demás ocurre entre el celular y Spotify.
+  // La sesión de Spotify es la única excepción a la caché de 4 h: dura 30 días y se renueva sola.
+  const spotify = (() => {
+    const KEY = 'spotify';
+    const AUTH_KEY = 'spAuth';
+    const TTL_MS = 30 * 24 * 3600 * 1000;
+    const SCOPES = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state';
+    const redirect = () => location.origin + '/spotify';
+    const listeners = new Set();
+    let clientIdP = null;
+    let sdkP = null;
+    let player = null;
+    let deviceId = null;
+    let wantPlay = false; // se tocó «música» antes de que el reproductor estuviera listo
+    const emit = (status, msg) => listeners.forEach(fn => fn(status, msg));
+    // Escritura directa con vencimiento propio (DC.local limita a 4 h); DC.local.get la lee igual.
+    const saveToken = t => { try { localStorage.setItem(PREFIX + KEY, JSON.stringify({ v: t, exp: Date.now() + TTL_MS })); } catch {} };
+    const token = () => local.get(KEY);
+    const clientId = () => (clientIdP = clientIdP || fetch('/api/spotify-config', { headers: { 'ngrok-skip-browser-warning': '1' } })
+      .then(r => r.json()).then(j => j.clientId || null).catch(() => { clientIdP = null; return null; }));
+    const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    async function login() {
+      const id = await clientId();
+      if (!id) { toast('Spotify no está configurado en el servidor (falta SPOTIFY_CLIENT_ID)', 'bad'); return; }
+      if (!crypto.subtle) { toast('Para Spotify abre la página por https', 'bad'); return; }
+      const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+      const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+      local.set(AUTH_KEY, { verifier, state, back: location.href }, 10 * 60 * 1000);
+      const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+      location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+        client_id: id, response_type: 'code', redirect_uri: redirect(), scope: SCOPES,
+        code_challenge_method: 'S256', code_challenge: challenge, state,
+      });
+    }
+    async function tokenRequest(params) {
+      const r = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: await clientId(), ...params }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error_description || j.error || 'Spotify rechazó la sesión');
+      const prev = token() || {};
+      saveToken({ access: j.access_token, refresh: j.refresh_token || prev.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    }
+    // Lo usa /spotify al volver del inicio de sesión. Devuelve la página a la que hay que regresar.
+    async function finishLogin(q) {
+      const auth = local.get(AUTH_KEY);
+      local.remove(AUTH_KEY);
+      if (q.get('error')) throw new Error(q.get('error') === 'access_denied' ? 'Cancelaste la conexión con Spotify' : 'Spotify: ' + q.get('error'));
+      if (!auth || auth.state !== q.get('state')) throw new Error('La conexión expiró; vuelve a tocar «Conectar Spotify»');
+      await tokenRequest({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: redirect(), code_verifier: auth.verifier });
+      return auth.back;
+    }
+    async function access() {
+      const t = token();
+      if (!t) throw new Error('Conecta Spotify primero');
+      if (Date.now() > t.exp) {
+        try { await tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh }); }
+        catch (e) { local.remove(KEY); emit('off'); throw new Error('La sesión de Spotify venció; vuelve a conectar'); }
+      }
+      return token().access;
+    }
+    function loadSdk() {
+      return (sdkP = sdkP || new Promise((resolve, reject) => {
+        window.onSpotifyWebPlaybackSDKReady = resolve;
+        const s = document.createElement('script');
+        s.src = 'https://sdk.scdn.co/spotify-player.js';
+        s.onerror = () => { sdkP = null; reject(new Error('No se pudo cargar el reproductor de Spotify')); };
+        document.head.appendChild(s);
+      }));
+    }
+    async function transfer() {
+      const r = await fetch('https://api.spotify.com/v1/me/player', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + await access(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_ids: [deviceId], play: true }),
+      });
+      if (!r.ok) throw new Error(`Spotify no pudo pasar la música aquí (${r.status})`);
+    }
+    // Prepara el reproductor al cargar la página (si hay sesión): así el toque de «música»
+    // puede habilitar el audio al instante, como exige iOS.
+    async function prepare() {
+      if (!token() || player) return;
+      try {
+        await loadSdk();
+        player = new window.Spotify.Player({ name: 'DC Sport Score', getOAuthToken: cb => access().then(cb).catch(e => emit('error', e.message)), volume: 1 });
+        for (const ev of ['initialization_error', 'authentication_error', 'account_error', 'playback_error']) {
+          player.addListener(ev, ({ message }) => emit('error', ev === 'account_error' ? 'Spotify requiere cuenta Premium' : message));
+        }
+        player.addListener('autoplay_failed', () => emit('error', 'iOS bloqueó la música: toca «🎵 Música» otra vez'));
+        player.addListener('not_ready', () => { deviceId = null; emit('connecting'); });
+        player.addListener('ready', ({ device_id }) => {
+          deviceId = device_id;
+          emit('ready');
+          if (wantPlay) { wantPlay = false; transfer().then(() => emit('playing')).catch(e => emit('error', e.message)); }
+        });
+        player.addListener('player_state_changed', s => { if (s) emit(s.paused ? 'paused' : 'playing', s.track_window.current_track && s.track_window.current_track.name); });
+        await player.connect();
+      } catch (e) { emit('error', e.message); }
+    }
+    // Debe llamarse dentro de un toque: inicia sesión si hace falta, o pasa la música a esta página.
+    function play() {
+      if (!token()) { login(); return; }
+      if (!player) { wantPlay = true; emit('connecting'); prepare(); return; }
+      player.activateElement(); // habilita el audio del reproductor (requisito de iOS)
+      if (!deviceId) { wantPlay = true; emit('connecting'); return; }
+      transfer().then(() => emit('playing')).catch(e => emit('error', e.message));
+    }
+    function logout() {
+      local.remove(KEY);
+      if (player) player.disconnect();
+      player = null; deviceId = null;
+      emit('off');
+    }
+    return {
+      connected: () => !!token(), login, finishLogin, prepare, play, logout,
+      onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
+    };
+  })();
+
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
   options().then(o => { palette = o.teamColors || []; }).catch(() => {});
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
+  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
 })();
