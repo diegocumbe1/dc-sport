@@ -174,7 +174,7 @@ test('persistencia tras reiniciar el servidor', async () => {
   assert.deepEqual(s1.points, [1, 0]);
   const s3 = await (await fetch(BASE + '/api/rooms/sala3')).json();
   assert.equal(s3.currentSet, 2);
-  assert.deepEqual(s3.sets, [0, 1]);
+  assert.deepEqual(s3.sets, [1, 0], 'B ganó el set 1 y cambió al lado izquierdo');
   const s5 = await (await fetch(BASE + '/api/rooms/sala5')).json();
   assert.equal(s5.teams[0].name, 'LEONES');
   // Deshacer sigue funcionando con el historial persistido (la última acción fue −1 B).

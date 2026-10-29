@@ -205,37 +205,234 @@
     // Regla de canto: primero el equipo que tiene el saque (quien ganó el último punto).
     const first = s.serve === 1 ? 1 : 0;
     const names = [A, B];
-    if (a === b) return `Empate a ${a}. Saca ${names[first]}.`;
+    // Con tope de alargue (o muerte súbita), un empate a un punto del tope decide el set.
+    if (a === b) return `Empate a ${a}. Saca ${names[first]}.${s.maxPoints && a === s.maxPoints - 1 ? ' Punto decisivo.' : ''}`;
     let text = `${names[first]}, ${s.points[first]}. ${names[1 - first]}, ${s.points[1 - first]}.`;
     const lead = a > b ? 0 : 1;
     if (Math.max(a, b) >= s.target - 1) text += ` Punto de set para ${names[lead]}.`;
     return text;
   }
+  // ---------- Tabla de posiciones por sets ----------
+  // Ganados: teamSets (incluye correcciones del admin). Perdidos y puntos: historial de sets.
+  // Orden: más sets ganados, menos perdidos, mejor diferencia de puntos. Empates comparten puesto.
+  function standings(s) {
+    const rows = s.allTeams.map((t, i) => ({ i, name: t.name, color: t.color, won: s.teamSets[i] || 0, lost: 0, pf: 0, pa: 0 }));
+    for (const r of s.setResults || []) {
+      if (!Array.isArray(r.teams)) continue;
+      r.teams.forEach((ti, side) => {
+        const row = rows[ti];
+        if (!row) return;
+        row.pf += r.points[side];
+        row.pa += r.points[1 - side];
+        if (r.winner !== ti) row.lost++;
+      });
+    }
+    const key = r => [r.won, -r.lost, r.pf - r.pa];
+    rows.sort((a, b) => b.won - a.won || a.lost - b.lost || (b.pf - b.pa) - (a.pf - a.pa) || a.i - b.i);
+    rows.forEach((r, k) => {
+      r.played = r.won + r.lost;
+      r.diff = r.pf - r.pa;
+      const prev = rows[k - 1];
+      r.pos = prev && key(prev).join() === key(r).join() ? prev.pos : k + 1;
+      r.status = s.court.includes(r.i) ? 'En cancha' : s.queue.includes(r.i) ? `Espera ${s.queue.indexOf(r.i) + 1}` : '';
+    });
+    return { rows, total: (s.setResults || []).length };
+  }
+
+  // «a 10», «a 10 · sin alargue» o «a 10 · máx. 12», según el alargue configurado.
+  function targetText(s) {
+    if (s.maxPoints === null || s.maxPoints === undefined) return `a ${s.target}`;
+    return s.maxPoints === s.target ? `a ${s.target} · sin alargue` : `a ${s.target} · máx. ${s.maxPoints}`;
+  }
   function stopSpeaking() {
     clearTimeout(voiceTimer);
+    clipToken++; // invalida el anuncio grabado en curso
+    if (clipAudio) clipAudio.pause();
     if (voiceSupported) speechSynthesis.cancel();
   }
+  // Referencia al anuncio en curso: si el navegador lo libera de memoria, `onend` no llega
+  // y las repeticiones se pierden (bug conocido de Chrome/WebKit).
+  let currentUtterance = null;
   function speak(text, cfg) {
     if (!voiceSupported) return false;
+    // En iOS (Safari y Chrome usan WebKit), hablar justo después de cancel() a veces no suena:
+    // solo se cancela si hay algo sonando y se espera un instante antes del nuevo anuncio.
+    // Sin nada sonando se habla de inmediato (el primer anuncio debe ir dentro del toque).
+    const busy = speechSynthesis.speaking || speechSynthesis.pending;
     stopSpeaking();
     const c = { rate: 1, repeat: 1, interval: 3, lang: 'es-CO', ...cfg };
     let done = 0;
-    const once = () => {
+    const once = (useVoice = true) => {
       const u = new SpeechSynthesisUtterance(text);
-      const v = pickVoice(c.lang);
-      u.lang = v ? v.lang : c.lang;
+      const v = useVoice ? pickVoice(c.lang) : null;
+      // Siempre en español: casi ningún dispositivo trae voz es-CO, y pedir un idioma sin voz
+      // hace que algunos (iPhone) usen la voz del sistema, que puede ser en inglés.
+      u.lang = v ? v.lang : (c.lang === 'es-CO' ? 'es-MX' : c.lang);
       u.rate = c.rate;
       if (v) u.voice = v.voice;
       u.onend = () => {
         done++;
-        if (done < c.repeat) voiceTimer = setTimeout(once, c.interval * 1000);
+        if (done < c.repeat) voiceTimer = setTimeout(() => once(useVoice), c.interval * 1000);
       };
+      // Algunas voces listadas no están instaladas en el iPhone y fallan en silencio:
+      // se reintenta una vez con la voz por defecto del sistema para el idioma.
+      u.onerror = e => {
+        if (v && e.error !== 'interrupted' && e.error !== 'canceled') once(false);
+      };
+      currentUtterance = u;
+      speechSynthesis.resume(); // iOS puede quedar «en pausa» tras ir a segundo plano
       speechSynthesis.speak(u);
+    };
+    if (busy) voiceTimer = setTimeout(() => once(), 120);
+    else once();
+    return true;
+  }
+  if (voiceSupported) speechSynthesis.getVoices(); // precarga la lista de voces
+
+  // ---------- Voz grabada (public/audio/voz, generada con scripts/generar-voz.sh) ----------
+  // En iPhone la voz del navegador PAUSA la música (Spotify); un audio normal suena encima sin
+  // pausarla. Cada anuncio se arma uniendo audios WAV (mono, 16 bits) en un solo WAV con un «ding»
+  // al inicio, y se reproduce con un único <audio> desbloqueado en el primer toque (iOS bloquea
+  // audios que no nacen de un toque). Si falta algún audio, se usa la voz del navegador.
+  const CLIP_RATE = 22050;
+  const CLIP_MAX_NUMBER = 60;
+  const GAP = { ',': 0.18, '|': 0.35 }; // pausas (s): coma y punto
+  const WORD_GAP = 0.04;
+  const clipCache = new Map(); // clave → Promise<Int16Array>
+  let palette = []; // colores de options.json: el anuncio usa el nombre del color del equipo
+  let clipAudio = null;
+  let clipUrl = null;
+  let clipToken = 0;
+  const audioSupported = typeof Audio !== 'undefined';
+  const clipEl = () => (clipAudio = clipAudio || new Audio());
+
+  function makeWav(samples) {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const v = new DataView(buf);
+    const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, CLIP_RATE, true); v.setUint32(28, CLIP_RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, samples.length * 2, true);
+    new Int16Array(buf, 44).set(samples);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  // Muestras de un WAV: busca el bloque «data» (por si el archivo trae otros bloques).
+  function wavSamples(buf) {
+    const v = new DataView(buf);
+    for (let o = 12; o + 8 <= buf.byteLength;) {
+      const id = String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3));
+      const size = v.getUint32(o + 4, true);
+      if (id === 'data') return new Int16Array(buf.slice(o + 8, o + 8 + size));
+      o += 8 + size + (size % 2);
+    }
+    throw new Error('WAV sin datos');
+  }
+  function loadClip(key) {
+    if (!clipCache.has(key)) {
+      const p = fetch(`/audio/voz/${key}.wav`)
+        .then(r => { if (!r.ok) throw new Error('Falta el audio ' + key); return r.arrayBuffer(); })
+        .then(wavSamples);
+      p.catch(() => clipCache.delete(key)); // se reintenta en el próximo anuncio
+      clipCache.set(key, p);
+    }
+    return clipCache.get(key);
+  }
+  const colorKey = label => 'c_' + label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  // Claves de audio del anuncio: mismo contenido que scoreSpeech. ',' y '|' son pausas.
+  // Devuelve null si algo no tiene audio (número fuera de rango, color no grabado).
+  function scoreClips(s) {
+    const team = t => {
+      const c = palette.find(p => p.value.toLowerCase() === String(t.color).toLowerCase());
+      return c ? colorKey(c.label) : null;
+    };
+    const n = x => (Number.isInteger(x) && x >= 0 && x <= CLIP_MAX_NUMBER ? 'n' + x : null);
+    const [a, b] = s.points;
+    let parts;
+    if (s.phase === 'matchOver') {
+      const w = s.matchWinner;
+      parts = [team(s.teams[w]), 'gana_el_partido', '|', 'sets', n(s.sets[w]), 'a', n(s.sets[1 - w])];
+    } else if (s.phase === 'setOver') {
+      const w = s.setWinner;
+      parts = ['set_para', team(s.teams[w]), '|', 'quedo', n(s.points[w]), 'a', n(s.points[1 - w])];
+      if (s.rotationMode && s.nextIn !== null) parts.push('|', 'se_prepara', team(s.allTeams[s.nextIn]));
+    } else if (a === 0 && b === 0) {
+      parts = [team(s.teams[0]), 'contra', team(s.teams[1]), '|', 'cero_a_cero'];
+    } else {
+      // Regla de canto: primero el equipo que tiene el saque (quien ganó el último punto).
+      const first = s.serve === 1 ? 1 : 0;
+      const names = s.teams.map(team);
+      if (a === b) {
+        parts = ['empate_a', n(a), '|', 'saca', names[first]];
+        if (s.maxPoints && a === s.maxPoints - 1) parts.push('|', 'punto_decisivo');
+      } else {
+        parts = [names[first], ',', n(s.points[first]), '|', names[1 - first], ',', n(s.points[1 - first])];
+        if (Math.max(a, b) >= s.target - 1) parts.push('|', 'punto_de_set_para', names[a > b ? 0 : 1]);
+      }
+    }
+    return parts.includes(null) ? null : ['ding', '|', ...parts];
+  }
+
+  async function buildClip(parts) {
+    const data = await Promise.all(parts.filter(p => !(p in GAP)).map(loadClip));
+    const chunks = [];
+    let k = 0;
+    let prevWord = false;
+    for (const p of parts) {
+      if (p in GAP) { chunks.push(new Int16Array(Math.round(GAP[p] * CLIP_RATE))); prevWord = false; continue; }
+      if (prevWord) chunks.push(new Int16Array(Math.round(WORD_GAP * CLIP_RATE)));
+      chunks.push(data[k++]);
+      prevWord = true;
+    }
+    const out = new Int16Array(chunks.reduce((t, c) => t + c.length, 0));
+    let o = 0;
+    for (const c of chunks) { out.set(c, o); o += c.length; }
+    return makeWav(out);
+  }
+  // Reproduce el anuncio con repeticiones. false si no se pudo armar (para usar la voz del navegador).
+  async function playClips(parts, c) {
+    const token = ++clipToken;
+    let blob;
+    try { blob = await buildClip(parts); } catch { return false; }
+    if (token !== clipToken) return true; // llegó un anuncio más nuevo
+    const el = clipEl();
+    if (clipUrl) URL.revokeObjectURL(clipUrl);
+    clipUrl = URL.createObjectURL(blob);
+    let done = 0;
+    const once = () => {
+      if (token !== clipToken) return;
+      el.src = clipUrl;
+      el.defaultPlaybackRate = el.playbackRate = c.rate;
+      el.onended = () => {
+        done++;
+        if (done < c.repeat && token === clipToken) voiceTimer = setTimeout(once, c.interval * 1000);
+      };
+      el.play().catch(() => {});
     };
     once();
     return true;
   }
-  if (voiceSupported) speechSynthesis.getVoices(); // precarga la lista de voces
+  // Debe llamarse dentro de un toque: deja el <audio> habilitado para los anuncios siguientes
+  // y precarga los audios más usados.
+  function unlockAudio() {
+    if (!audioSupported) return;
+    const el = clipEl();
+    el.src = URL.createObjectURL(makeWav(new Int16Array(CLIP_RATE / 20)));
+    el.play().catch(() => {});
+    const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
+    for (let i = 0; i <= 30; i++) common.push('n' + i);
+    common.concat(palette.map(p => colorKey(p.label))).forEach(k => loadClip(k).catch(() => {}));
+  }
+  // Anuncia el marcador: voz grabada si hay audios para todo; si no, la voz del navegador.
+  function announce(s, cfg) {
+    const c = { rate: 1, repeat: 1, interval: 3, ...cfg };
+    const parts = audioSupported && palette.length ? scoreClips(s) : null;
+    stopSpeaking();
+    if (!parts) return speak(scoreSpeech(s), cfg);
+    playClips(parts, c).then(ok => { if (!ok) speak(scoreSpeech(s), cfg); });
+    return true;
+  }
 
   // ---------- Anunciador por voz (compartido por marcador y control) ----------
   // Lo usan el marcador (modo dos pantallas) y el control (modo un solo dispositivo: celular +
@@ -252,7 +449,7 @@
       if (!btn) return;
       const enabled = enabledInRoom(last);
       btn.className = enabled && !voiceOn ? 'ok' : 'alt';
-      btn.classList.toggle('hidden', !voiceSupported);
+      btn.classList.toggle('hidden', !voiceSupported && !audioSupported);
       btn.textContent = !enabled ? L.off : voiceOn ? L.on : L.idle;
     }
     // Llamar en cada estado recibido.
@@ -260,23 +457,24 @@
       const prev = last;
       last = s;
       paint();
-      if (!enabledInRoom(s) || !voiceSupported) { stopSpeaking(); return; }
+      if (!enabledInRoom(s) || (!voiceSupported && !audioSupported)) { stopSpeaking(); return; }
       if (!voiceOn || !prev) return;
       const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet;
       if (!changed) return;
       // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
       clearTimeout(debounce);
-      debounce = setTimeout(() => speak(scoreSpeech(last), last.voice), 600);
+      debounce = setTimeout(() => announce(last, last.voice), 600);
     }
     // Debe llamarse dentro de un toque/clic del usuario (desbloquea el audio en móviles).
     function unlock() {
-      if (!voiceSupported) { toast('Este navegador no soporta voz', 'bad'); return false; }
+      if (!voiceSupported && !audioSupported) { toast('Este navegador no soporta voz', 'bad'); return false; }
       if (!enabledInRoom(last)) {
         toast('La voz está apagada para esta sala. Actívala en Administración → «Voz del marcador» o al crear el tablero.');
         return false;
       }
       voiceOn = true;
-      speak(scoreSpeech(last), { ...last.voice, repeat: 1 });
+      unlockAudio();
+      announce(last, { ...last.voice, repeat: 1 });
       paint();
       return true;
     }
@@ -382,5 +580,8 @@
     return true;
   }
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, voiceAnnouncer, voicePicker };
+  // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
+  options().then(o => { palette = o.teamColors || []; }).catch(() => {});
+
+  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
 })();

@@ -45,6 +45,7 @@
         <label class="field" id="setsField">Partido a (mejor de)<select id="sets"></select></label>
         -->
         <label class="field hidden" id="rotationField">Al terminar cada set<select id="rotation"></select></label>
+        <label class="field">Si empatan al final del set<select id="overtime"></select></label>
       </div>
       <h3 class="muted" style="font-size:14px;margin:14px 0 6px">Equipos · nombre opcional: si lo dejas vacío toma el nombre del color</h3>
       <div id="teamRows" class="grid2"></div>
@@ -171,13 +172,14 @@
     $('rotationField').classList.toggle('hidden', n <= 2);
   }
   function saveDraft() {
-    DC.local.set('setup', { count: Number($('count').value), teams: readRows(), pps: $('pps').value, rotation: $('rotation').value, voice: $('voice').checked });
+    DC.local.set('setup', { count: Number($('count').value), teams: readRows(), pps: $('pps').value, rotation: $('rotation').value, overtime: $('overtime').value, voice: $('voice').checked });
   }
   DC.options().then(o => {
     PALETTE = o.teamColors;
     DC.fillSelect($('count'), o.teamCount, draft.count);
     DC.fillSelect($('pps'), o.pointsPerSet, draft.pps);
     DC.fillSelect($('rotation'), o.rotation, draft.rotation);
+    DC.fillSelect($('overtime'), o.overtime, draft.overtime);
     drawRows(Number($('count').value), draft.teams || []);
   });
   $('voice').checked = draft.voice !== false; // voz activa por defecto
@@ -191,6 +193,7 @@
       teams: readRows(),
       pointsPerSet: Number($('pps').value),
       rotation: $('rotation').value,
+      overtime: Number($('overtime').value),
       voice: { enabled: $('voice').checked },
       pin,
     };
@@ -268,6 +271,7 @@
       DC.fillSelect($('count'), o.teamCount);
       DC.fillSelect($('pps'), o.pointsPerSet);
       DC.fillSelect($('rotation'), o.rotation);
+      DC.fillSelect($('overtime'), o.overtime);
       drawRows(Number($('count').value), []);
     });
     $('voice').checked = true;

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeGame, apply, hydrate } = require('../src/volley');
+const { makeGame, apply, hydrate, publicState } = require('../src/volley');
 
 const pt = (g, team, delta = 1) => apply(g, { type: 'point', team, delta });
 function score(g, a, b) {
@@ -60,9 +60,10 @@ test('deshacer revierte el punto que cerró el set', () => {
 test('partido a 3 sets con decisivo a 15 y fin de partido', () => {
   const g = makeGame();
   apply(g, { type: 'setConfig', pointsPerSet: 21, totalSets: 3, decidingSetPoints: 15 }, { admin: true });
-  score(g, 21, 0); apply(g, { type: 'nextSet' });
-  score(g, 0, 21); apply(g, { type: 'nextSet' });
+  score(g, 21, 0); apply(g, { type: 'nextSet' }); // gana A; A pasa a la derecha
+  score(g, 21, 0); apply(g, { type: 'nextSet' }); // gana B (izq.); vuelven a sus lados
   assert.equal(g.currentSet, 3);
+  assert.deepEqual(g.teamSets, [1, 1]);
   score(g, 15, 13);
   assert.equal(g.phase, 'matchOver');
   assert.equal(g.matchWinner, 0);
@@ -136,6 +137,18 @@ function threeTeams(rotation = 'winnerStays') {
   return g;
 }
 
+test('2 equipos: cambian de lado en cada set y los puntos siguen al lado correcto', () => {
+  const g = makeGame();
+  score(g, 25, 10); // gana A (izq.)
+  apply(g, { type: 'nextSet' });
+  assert.deepEqual(g.court, [1, 0], 'B pasa a la izquierda');
+  assert.deepEqual(publicState('x', g).sets, [0, 1], 'los sets siguen a su equipo');
+  apply(g, { type: 'point', team: 0, delta: 1 });
+  assert.equal(g.log[g.log.length - 1].text.includes(g.teams[1].name), true, 'el punto del lado izq. es de B');
+  apply(g, { type: 'undo' }); apply(g, { type: 'undo' });
+  assert.deepEqual([g.court, g.phase], [[0, 1], 'setOver'], 'deshacer devuelve los lados');
+});
+
 test('3 equipos: cancha inicial y cola', () => {
   const g = threeTeams();
   assert.deepEqual(g.court, [0, 1]);
@@ -161,7 +174,7 @@ test('3 equipos: se puede elegir mismos equipos al confirmar', () => {
   const g = threeTeams();
   score(g, 15, 0);
   apply(g, { type: 'nextSet', rotate: false });
-  assert.deepEqual(g.court, [0, 1]);
+  assert.deepEqual(g.court, [1, 0], 'mismos equipos: cambian de lado');
   assert.deepEqual(g.queue, [2]);
 });
 
@@ -169,10 +182,10 @@ test('3 equipos con rotación "none" por defecto mantiene equipos; rotate:true f
   const g = threeTeams('none');
   score(g, 15, 0);
   apply(g, { type: 'nextSet' });
-  assert.deepEqual(g.court, [0, 1]);
-  score(g, 0, 15);
+  assert.deepEqual(g.court, [1, 0], 'mismos equipos: cambian de lado');
+  score(g, 15, 0);
   apply(g, { type: 'nextSet', rotate: true });
-  assert.deepEqual(g.court, [2, 1], 'pierde A (izq.), entra C');
+  assert.deepEqual(g.court, [1, 2], 'pierde A (der.), entra C');
 });
 
 test('3 equipos: no hay fin automático de partido', () => {
@@ -234,11 +247,11 @@ test('por defecto partido abierto: 2 equipos sin fin automático', () => {
   const g = makeGame();
   assert.equal(g.config.totalSets, 0);
   for (let i = 0; i < 6; i++) {
-    score(g, 25, 0);
+    score(g, 25, 0); // gana siempre el lado izquierdo; los equipos alternan de lado
     assert.equal(g.phase, 'setOver');
     apply(g, { type: 'nextSet' });
   }
-  assert.deepEqual(g.teamSets, [6, 0]);
+  assert.deepEqual(g.teamSets, [3, 3]);
   assert.equal(g.currentSet, 7);
 });
 
@@ -268,4 +281,50 @@ test('saque: lo tiene quien ganó el último punto; deshacer lo revierte; nuevo 
   score(g, 25, 0);
   apply(g, { type: 'nextSet' });
   assert.equal(g.serve, null);
+});
+
+// Lleva el set a un empate a `n` alternando puntos (sin que nadie gane antes).
+function tie(g, n) { for (let i = 0; i < n; i++) { pt(g, 0); pt(g, 1); } }
+const withOvertime = overtime => {
+  const g = makeGame();
+  assert.equal(apply(g, { type: 'setConfig', pointsPerSet: 10, overtime }, { admin: true }).ok, true);
+  return g;
+};
+
+test('alargue sin tope (por defecto): se gana por 2', () => {
+  const g = makeGame();
+  assert.equal(g.config.overtime, 99);
+  apply(g, { type: 'setConfig', pointsPerSet: 10 }, { admin: true });
+  tie(g, 9); pt(g, 0);
+  assert.equal(g.phase, 'playing', '10-9 no cierra');
+  pt(g, 1); tie(g, 5); pt(g, 0);
+  assert.equal(g.phase, 'playing', '16-15 no cierra');
+  pt(g, 0);
+  assert.equal(g.phase, 'setOver');
+  assert.equal(publicState('x', g).maxPoints, null);
+});
+
+test('muerte súbita: 10-9 termina el set', () => {
+  const g = withOvertime(0);
+  tie(g, 9); pt(g, 0);
+  assert.deepEqual([g.points, g.phase, g.setWinner], [[10, 9], 'setOver', 0]);
+  assert.equal(publicState('x', g).maxPoints, 10);
+});
+
+test('alargue con tope +2: a 10 se gana por 2 hasta llegar a 12', () => {
+  const g = withOvertime(2);
+  tie(g, 9); pt(g, 0);
+  assert.equal(g.phase, 'playing', '10-9 sigue');
+  pt(g, 1); pt(g, 1);
+  assert.equal(g.phase, 'playing', '10-11 sigue');
+  pt(g, 0); pt(g, 1);
+  assert.deepEqual([g.points, g.phase, g.setWinner], [[11, 12], 'setOver', 1], 'al tope gana por 1');
+});
+
+test('alargue: valor inválido rechazado; salas viejas toman el predeterminado', () => {
+  const g = makeGame();
+  assert.equal(apply(g, { type: 'setConfig', overtime: 3 }, { admin: true }).ok, false);
+  const old = hydrate({ config: { pointsPerSet: 15, totalSets: 0, decidingSetPoints: 15, rotation: 'none' }, voice: { enabled: true, lang: 'en-US', v: 2 } });
+  assert.equal(old.config.overtime, 99);
+  assert.equal(old.voice.lang, 'es-CO', 'la voz siempre en español');
 });

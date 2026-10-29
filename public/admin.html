@@ -66,6 +66,7 @@
       <label class="field">Puntos del set decisivo<select id="dsp"></select></label>
       -->
       <label class="field">Al terminar un set (con equipos en espera)<select id="rotation"></select></label>
+      <label class="field">Si empatan al final del set<select id="overtime"></select></label>
       <div style="align-self:end"><button type="submit">Guardar configuración</button></div>
     </form>
     <p class="muted">La opción de rotación es la sugerida; en el control siempre se puede elegir al confirmar el set.</p>
@@ -148,7 +149,7 @@
     OPTS = o;
     MAX_TEAMS = Math.max(...o.teamCount.options.map(x => x.value));
     PALETTE = o.teamColors;
-    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang']]) DC.fillSelect($(id), o[key]);
+    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['overtime', 'overtime'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang']]) DC.fillSelect($(id), o[key]);
     render(true);
   });
   $('pinRoom').textContent = 'Sala: ' + DC.room;
@@ -262,6 +263,7 @@
       $('courtA').value = s.court[0]; $('courtB').value = s.court[1];
       $('pps').value = s.config.pointsPerSet;
       $('rotation').value = s.config.rotation;
+      $('overtime').value = s.config.overtime;
       const v = s.voice;
       $('vEnabled').value = v.enabled ? '1' : '0'; $('vRate').value = v.rate; $('vRateLbl').textContent = v.rate;
       $('vRepeat').value = v.repeat; $('vInterval').value = v.interval; $('vLang').value = v.lang;
@@ -288,14 +290,15 @@
   $('configForm').onsubmit = e => {
     e.preventDefault();
     // totalSets 0 = partido abierto (sin «mejor de N»), ver config/options.json.
-    run({ type: 'setConfig', pointsPerSet: num('pps'), totalSets: 0, rotation: $('rotation').value }, 'Configuración guardada');
+    run({ type: 'setConfig', pointsPerSet: num('pps'), totalSets: 0, rotation: $('rotation').value, overtime: num('overtime') }, 'Configuración guardada');
   };
   const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value });
   $('vRate').oninput = () => { $('vRateLbl').textContent = $('vRate').value; };
   $('voiceForm').onsubmit = e => { e.preventDefault(); run({ type: 'setVoice', voice: voiceCfg() }, 'Voz guardada'); };
   $('vTest').onclick = () => {
     if (!state) return;
-    if (!DC.speak(DC.scoreSpeech(state), voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
+    DC.unlockAudio(); // dentro del toque: habilita el audio en móviles
+    if (!DC.announce(state, voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
   };
   $('scoreForm').onsubmit = async e => {
     e.preventDefault();

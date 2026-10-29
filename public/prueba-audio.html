@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Prueba de audio · DC Sport Score</title>
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .wrap { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
+  .test { background: var(--panel); border-radius: 16px; padding: 14px 16px; margin-top: 14px; }
+  .test h3 { margin: 0 0 4px; }
+  .test p { margin: 4px 0 10px; font-size: 14px; }
+  .test button { width: 100%; padding: 14px; font-size: 17px; }
+  #support { font-size: 14px; }
+  ol { padding-left: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p><a href="/">← Inicio</a></p>
+  <h1 style="margin:0">Prueba de audio con música</h1>
+  <p class="muted">Sirve para saber qué forma de anunciar el marcador <b>no pausa</b> Spotify en este celular.</p>
+  <ol class="muted">
+    <li>Desactiva el interruptor de silencio del iPhone y sube el volumen.</li>
+    <li>Pon música en Spotify y vuelve a esta página.</li>
+    <li>Toca <b>una</b> prueba y anota si la música se pausa, baja o sigue igual.</li>
+    <li>Antes de la siguiente prueba, <b>recarga la página</b> (el modo de audio queda fijado hasta recargar) y vuelve a dar play en Spotify si se pausó.</li>
+  </ol>
+  <p id="support" class="muted"></p>
+
+  <div class="test">
+    <h3>1 · Voz del navegador (la actual)</h3>
+    <p class="muted">La que usa hoy el marcador. Referencia: en iPhone se espera que pause la música.</p>
+    <button class="alt" data-t="speech">▶ Probar voz del navegador</button>
+  </div>
+
+  <div class="test">
+    <h3>2 · Audio grabado, modo «ambient» (candidato)</h3>
+    <p class="muted">Pide al sistema mezclar con otras apps. Si la música sigue sonando, este es el camino. En este modo el interruptor de silencio sí apaga el sonido.</p>
+    <button class="ok" data-t="ambient">▶ Probar audio «ambient»</button>
+  </div>
+
+  <div class="test">
+    <h3>3 · Audio grabado, modo «transient»</h3>
+    <p class="muted">Pensado para avisos cortos tipo notificación (puede bajar la música en vez de pausarla).</p>
+    <button class="alt" data-t="transient">▶ Probar audio «transient»</button>
+  </div>
+
+  <div class="test">
+    <h3>4 · Audio grabado, modo normal</h3>
+    <p class="muted">Sin pedir nada al sistema.</p>
+    <button class="alt" data-t="plain">▶ Probar audio normal</button>
+  </div>
+
+  <h2 style="margin-top:28px">Ronda 2 · que se escuche sobre la música</h2>
+  <p class="muted">Ninguna página web puede bajar el volumen de Spotify. Estas versiones suenan más fuerte que la música en lugar de bajarla. Compáralas con la 4 con Spotify sonando (no hace falta recargar).</p>
+
+  <div class="test">
+    <h3>5 · Audio reforzado</h3>
+    <p class="muted">Misma frase, comprimida y con la voz realzada: ~2× más fuerte que la 4.</p>
+    <button class="ok" data-t="plain" data-f="fuerte">▶ Probar audio reforzado</button>
+  </div>
+
+  <div class="test">
+    <h3>6 · Aviso «ding» + audio reforzado</h3>
+    <p class="muted">Un tono corto antes de la voz para que todos presten atención.</p>
+    <button class="ok" data-t="plain" data-f="fuerte-ding">▶ Probar ding + reforzado</button>
+  </div>
+
+  <div class="test">
+    <button class="alt" onclick="location.reload()">↻ Recargar página</button>
+  </div>
+</div>
+<script>
+  const has = 'audioSession' in navigator;
+  document.getElementById('support').innerHTML =
+    `Este navegador ${has ? '<b style="color:#2fbf71">sí</b>' : '<b style="color:var(--bad)">no</b>'} permite elegir el modo de audio (navigator.audioSession).` +
+    (has ? '' : ' Las pruebas 2 y 3 se comportarán como la 4.');
+  const TEXT = 'Azul, diez. Rojo, nueve. Punto de set para Azul.';
+  // Un mismo elemento de audio, creado al tocar (los navegadores exigen un toque para sonar).
+  function playClip(mode, file = 'prueba') {
+    if (has && mode !== 'plain') navigator.audioSession.type = mode;
+    const a = new Audio(`/audio-test/${file}.m4a`);
+    a.play().catch(e => alert('No se pudo reproducir: ' + e.message));
+  }
+  function speak() {
+    if (!('speechSynthesis' in window)) return alert('Este navegador no tiene voz');
+    const u = new SpeechSynthesisUtterance(TEXT);
+    u.lang = 'es-MX';
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+  document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
+    const t = b.dataset.t;
+    if (t === 'speech') speak(); else playClip(t, b.dataset.f);
+  });
+</script>
+</body>
+</html>

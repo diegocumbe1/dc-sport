@@ -13,12 +13,16 @@
 <div class="offline-banner">Sin conexión · los toques no se envían</div>
 <div class="ctl">
   <div class="ctl-bar">
+    <a class="btn-home" id="homeBtn" title="Volver al inicio" aria-label="Volver al inicio">⌂</a>
     <span class="conn" id="conn" data-status="connecting">Conectando…</span>
-    <span class="info" id="info">Sala</span>
+    <span class="info" id="info" role="button" title="Ver tabla de posiciones">Sala</span>
+    <button class="alt" id="rankBtn" type="button" title="Tabla de posiciones">🏆</button>
     <button class="alt" id="voiceBtn" type="button">🔇</button>
     <button class="alt" id="undo" type="button">↶ Deshacer</button>
     <button class="alt" id="menuBtn" type="button">☰</button>
   </div>
+  <!-- Tabla de posiciones: se despliega al tocar la barra de información o 🏆 -->
+  <div class="rank-panel hidden" id="rank"></div>
   <div class="rotate-hint">Gira el celular a horizontal para mayor comodidad</div>
   <div class="ctl-pads">
     <div class="pad" data-team="0" style="--c: var(--team-a)" role="button" aria-label="Equipo A">
@@ -78,6 +82,7 @@
     <div class="row">
       <button class="alt" id="mFs" type="button">Pantalla completa</button>
       <button class="alt" id="mVoicePick" type="button">⚙ Voz de este celular</button>
+      <a class="muted" id="lnkHome">⌂ Inicio</a>
       <a class="muted" id="lnkScreen" target="_blank">Marcador</a>
       <a class="muted" id="lnkAdmin">Admin</a>
       <a class="muted" href="/guia" target="_blank">Guía de uso</a>
@@ -108,6 +113,14 @@
   let online = false;
   let cooldownUntil = 0;
   const pending = [null, null]; // { timer, set } por equipo
+  // Puntaje mostrado al instante del toque, antes de que responda el servidor: { delta, version }.
+  // Solo se suma mientras el estado sea el mismo del toque; el siguiente estado del servidor lo reemplaza.
+  const optimistic = [null, null];
+  const shownPoints = t => {
+    const o = optimistic[t];
+    return state.points[t] + (o && o.version === state.version ? o.delta : 0);
+  };
+  const paintScore = t => { if (padOf(t)) $('score' + t).textContent = shownPoints(t); };
 
   // Control de un solo equipo (?equipo=a|b): una sola zona a pantalla completa, como un pulsador.
   if (DC.team !== null) {
@@ -126,7 +139,7 @@
   }
   document.addEventListener('visibilitychange', keepAwake);
   $('voiceBtn').addEventListener('click', keepAwake);
-  if (singleDevice && DC.voiceSupported) $('voiceStart').classList.remove('hidden');
+  if (singleDevice) $('voiceStart').classList.remove('hidden');
   $('vsGo').onclick = () => {
     if (!voice.state()) { DC.toast('Conectando con la sala…'); return; }
     voice.unlock();
@@ -134,7 +147,8 @@
     $('voiceStart').classList.add('hidden');
   };
   $('vsSkip').onclick = () => $('voiceStart').classList.add('hidden');
-  $('mVoicePick').classList.toggle('hidden', !DC.voiceSupported);
+  // La voz es grabada (igual en todos los celulares); el selector solo aplica a la voz de respaldo.
+  $('mVoicePick').classList.add('hidden');
   $('mVoicePick').onclick = () => DC.voicePicker(state);
 
   const api = DC.connect({
@@ -143,10 +157,14 @@
     onState: s => {
       const prev = state;
       state = s;
+      // Un toque que aún espera la ventana de doble toque conserva su puntaje adelantado
+      // aunque llegue un estado nuevo (por ejemplo, un punto del otro lado).
+      for (const t of [0, 1]) if (pending[t] && optimistic[t]) optimistic[t].version = s.version;
       // Cambio de set o de fase: se cancelan toques pendientes (no deben aplicarse al nuevo set).
       if (prev && (prev.currentSet !== s.currentSet || prev.phase !== s.phase)) {
         if (cancelPending()) DC.toast('Toque pendiente cancelado por cambio de set');
         if (prev.phase !== 'playing' && s.phase === 'playing') cooldownUntil = Date.now() + COOLDOWN_AFTER_SET_MS;
+        if (prev.currentSet !== s.currentSet && prev.court.join() === [...s.court].reverse().join()) DC.toast('↔ Cambio de lado: revisa los colores antes de sumar');
       }
       render();
       voice.update(s);
@@ -166,12 +184,13 @@
       if (!pad) continue;
       pad.style.setProperty('--c', s.teams[t].color);
       $('name' + t).textContent = s.teams[t].name;
-      $('score' + t).textContent = s.points[t];
+      $('score' + t).textContent = shownPoints(t);
       $('sets' + t).textContent = s.sets[t];
     }
     const mine = DC.team === null ? '' : ` · control ${s.teams[DC.team].name}`;
     const waiting = s.nextIn !== null ? ` · espera ${s.allTeams[s.nextIn].name}` : '';
-    $('info').textContent = `${s.points[0]}-${s.points[1]} · Set ${s.currentSet} (${s.sets[0]}-${s.sets[1]}) · a ${s.target}${s.decidingSet ? ' decisivo' : ''}${waiting} · ${DC.room}${mine}`;
+    $('info').textContent = `${s.points[0]}-${s.points[1]} · Set ${s.currentSet} (${s.sets[0]}-${s.sets[1]}) · ${DC.targetText(s)}${s.decidingSet ? ' decisivo' : ''}${waiting} · ${DC.room}${mine}`;
+    if (!$('rank').classList.contains('hidden')) renderRank();
     $('undo').disabled = !s.canUndo;
     $('mUndo').disabled = !s.canUndo;
     $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
@@ -206,13 +225,44 @@
     ov.classList.remove('hidden');
   }
 
+  // ---------- Tabla de posiciones ----------
+  function renderRank() {
+    const { rows, total } = DC.standings(state);
+    const medal = p => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[p] || p + '.');
+    $('rank').innerHTML = `<div class="rank-head"><b>Posiciones</b><span class="muted">${total} ${total === 1 ? 'set jugado' : 'sets jugados'} · set actual ${state.currentSet}</span></div>
+      <table><thead><tr><th></th><th>Equipo</th><th title="Sets ganados">G</th><th title="Sets perdidos">P</th><th title="Sets jugados">J</th><th title="Diferencia de puntos">Dif</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="pos">${medal(r.pos)}</td>
+        <td><span class="dot" style="background:${DC.esc(r.color)}"></span>${DC.esc(r.name)}${r.status ? ` <small class="muted">${r.status}</small>` : ''}</td>
+        <td><b>${r.won}</b></td><td>${r.lost}</td><td>${r.played}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td></tr>`).join('')}
+      </tbody></table>
+      <p class="muted rank-foot">G ganados · P perdidos · J jugados · Dif puntos a favor − en contra. Toca fuera para cerrar.</p>`;
+  }
+  function toggleRank(force) {
+    if (!state) return;
+    const open = force ?? $('rank').classList.contains('hidden');
+    if (open) renderRank();
+    $('rank').classList.toggle('hidden', !open);
+  }
+  $('info').onclick = () => toggleRank();
+  $('rankBtn').onclick = () => toggleRank();
+  $('rank').onclick = () => toggleRank(false);
+  // Un toque fuera del panel lo cierra sin sumar puntos.
+  document.addEventListener('pointerdown', e => {
+    if ($('rank').classList.contains('hidden') || e.target.closest('#rank, #info, #rankBtn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    toggleRank(false);
+  }, true);
+
   // ---------- Toques ----------
   function cancelPending() {
     let any = false;
     for (const t of [0, 1]) if (pending[t]) {
       clearTimeout(pending[t].timer);
       pending[t] = null;
+      optimistic[t] = null;
       padOf(t)?.classList.remove('pending');
+      if (state) paintScore(t);
       any = true;
     }
     return any;
@@ -231,7 +281,13 @@
   async function sendPoint(t, delta, set) {
     const res = await api.send({ type: 'point', team: t, delta, set });
     if (res.ok) flash(t, delta > 0 ? 'plus' : 'minus', delta > 0 ? '+1' : '−1');
-    else { flash(t, 'error', '✕'); DC.toast(res.error, 'bad'); }
+    else {
+      // Rechazado: se quita el puntaje adelantado y se vuelve al del servidor.
+      optimistic[t] = null;
+      paintScore(t);
+      flash(t, 'error', '✕');
+      DC.toast(res.error, 'bad');
+    }
   }
 
   function onTap(t) {
@@ -244,12 +300,17 @@
       clearTimeout(p.timer);
       pending[t] = null;
       padOf(t).classList.remove('pending');
+      optimistic[t] = { delta: state.points[t] > 0 ? -1 : 0, version: state.version };
+      paintScore(t);
       sendPoint(t, -1, p.set);
       return;
     }
-    // Primer toque: esperar a saber si llega un segundo antes de sumar.
+    // Primer toque: el +1 se muestra ya, pero se envía al terminar la ventana de doble toque
+    // (si llega un segundo toque, es una resta y el +1 nunca se envía).
     const set = state.currentSet;
-    $('fx' + t).textContent = '…';
+    optimistic[t] = { delta: 1, version: state.version };
+    paintScore(t);
+    $('fx' + t).textContent = '';
     padOf(t).classList.add('pending');
     pending[t] = {
       set,
@@ -323,6 +384,7 @@
       .catch?.(() => DC.toast('Pantalla completa no disponible en este navegador', 'bad'));
     closeMenu();
   };
+  $('homeBtn').href = $('lnkHome').href = '/?sala=' + encodeURIComponent(DC.room);
   $('lnkScreen').href = DC.urlFor('marcador');
   $('lnkAdmin').href = DC.urlFor('admin');
   $('mClear').onclick = () => { if (DC.clearLocalData()) { doubleTapMs = DEFAULT_DOUBLE_TAP_MS; $('dt').value = String(doubleTapMs); } };

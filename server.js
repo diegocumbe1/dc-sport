@@ -267,6 +267,7 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
       totalSets: body.totalSets ?? volley.OPTIONS.totalSets.default,
       decidingSetPoints: body.decidingSetPoints ?? volley.OPTIONS.decidingSetPoints.default,
       rotation: body.rotation ?? draft.config.rotation,
+      overtime: body.overtime ?? draft.config.overtime,
     },
   ];
   // Voz opcional desde el inicio: solo encender/apagar; el resto se ajusta en /admin.

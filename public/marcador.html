@@ -11,7 +11,7 @@
 <div class="offline-banner">Conexión perdida · el marcador puede no estar actualizado</div>
 <div class="sb">
   <div class="sb-top">
-    <span class="brand">DC SPORT SCORE</span>
+    <span class="brand"><a class="btn-home" id="homeBtn" href="/" title="Volver al inicio" aria-label="Volver al inicio">⌂</a> DC SPORT SCORE</span>
     <div class="right">
       <span class="muted" id="room"></span>
       <span class="muted" id="presence"></span>
@@ -45,6 +45,7 @@
 <script>
   const $ = id => document.getElementById(id);
   $('room').textContent = 'Sala: ' + DC.room;
+  $('homeBtn').href = '/?sala=' + encodeURIComponent(DC.room);
   let last = null;
 
   function render(s) {
@@ -62,9 +63,9 @@
       team.classList.toggle('winner', won);
     }
     $('setnum').textContent = s.currentSet;
-    $('target').textContent = s.rotationMode ? `a ${s.target} · rotación`
-      : s.openMatch ? `a ${s.target}`
-      : `a ${s.target}${s.decidingSet ? ' · decisivo' : ''} · mejor de ${s.config.totalSets}`;
+    $('target').textContent = s.rotationMode ? `${DC.targetText(s)} · rotación`
+      : s.openMatch ? DC.targetText(s)
+      : `${DC.targetText(s)}${s.decidingSet ? ' · decisivo' : ''} · mejor de ${s.config.totalSets}`;
 
     // Con rotación se muestran los nombres en cada set (los equipos cambian) y la cola de espera.
     const recent = s.rotationMode ? s.setResults.slice(-4) : s.setResults;
@@ -89,7 +90,8 @@
 
   // ---------- Voz (lógica compartida en common.js: DC.voiceAnnouncer) ----------
   const voice = DC.voiceAnnouncer({ btn: $('voiceBtn') });
-  if (!DC.voiceSupported) $('voicePick').classList.add('hidden');
+  // La voz es grabada (igual en todos los dispositivos); el selector solo aplica a la voz de respaldo.
+  $('voicePick').classList.add('hidden');
   $('voicePick').onclick = () => DC.voicePicker(last);
 
   DC.connect({

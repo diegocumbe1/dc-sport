@@ -19,6 +19,9 @@ const POINTS_OPTIONS = values('pointsPerSet');
 const DECIDING_OPTIONS = values('decidingSetPoints');
 const SETS_OPTIONS = values('totalSets');
 const ROTATION_OPTIONS = values('rotation');
+// Alargue: puntos extra permitidos sobre el objetivo. 0 = muerte súbita; el mayor = sin tope (ganar por 2).
+const OVERTIME_OPTIONS = values('overtime');
+const OVERTIME_UNLIMITED = Math.max(...OVERTIME_OPTIONS);
 const TEAM_COUNTS = values('teamCount');
 const MIN_TEAMS = Math.min(...TEAM_COUNTS);
 const MAX_TEAMS = Math.max(...TEAM_COUNTS);
@@ -33,6 +36,7 @@ const DEFAULT_CONFIG = {
   totalSets: OPTIONS.totalSets.default,
   decidingSetPoints: OPTIONS.decidingSetPoints.default,
   rotation: OPTIONS.rotation.default,
+  overtime: OPTIONS.overtime.default,
 };
 const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, v: 2 };
 
@@ -72,6 +76,9 @@ const setsToWin = g => Math.ceil(g.config.totalSets / 2);
 const isDecidingSet = g => !openMatch(g) && g.config.totalSets > 1 && g.currentSet === g.config.totalSets;
 const targetPoints = g => (isDecidingSet(g) ? g.config.decidingSetPoints : g.config.pointsPerSet);
 const courtSets = g => g.court.map(i => g.teamSets[i]);
+// Puntaje máximo del set: con alargue limitado, quien llega al tope gana aunque sea por 1.
+// null = sin tope (se gana por 2 de diferencia).
+const maxPoints = g => (g.config.overtime >= OVERTIME_UNLIMITED ? null : targetPoints(g) + g.config.overtime);
 
 // Campos que se guardan en cada instantánea para poder deshacer
 // (la voz no: es un ajuste del marcador, no parte del partido).
@@ -92,7 +99,10 @@ function addLog(g, text, by) {
 function evaluateSet(g) {
   if (g.phase !== 'playing') return;
   const [a, b] = g.points;
-  if (Math.max(a, b) < targetPoints(g) || Math.abs(a - b) < 2) return;
+  const top = Math.max(a, b);
+  const cap = maxPoints(g);
+  if (top < targetPoints(g) || a === b) return;
+  if (Math.abs(a - b) < 2 && (cap === null || top < cap)) return;
   const side = a > b ? 0 : 1;
   const team = g.court[side];
   g.teamSets[team]++;
@@ -128,6 +138,7 @@ const nonNegInt = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 const inRange = (v, min, max) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 
 const fail = error => ({ ok: false, error });
+const overtimeLabel = o => (o === 0 ? 'muerte súbita' : o >= OVERTIME_UNLIMITED ? 'alargue sin tope' : `alargue hasta +${o}`);
 
 // Aplica un comando. Devuelve { ok, error? }. Solo modifica `g` si ok === true.
 // `admin` indica que el comando viene autenticado con PIN.
@@ -171,12 +182,14 @@ function apply(g, cmd, { admin = false } = {}) {
       const wantRotate = typeof cmd.rotate === 'boolean' ? cmd.rotate : g.config.rotation === 'winnerStays';
       pushUndo(g, `Inicio set ${g.currentSet + 1}`);
       const change = wantRotate ? rotate(g) : null;
+      // Si siguen los mismos dos equipos, cambian de lado (cambio de cancha) como en el voleibol real.
+      if (!change) g.court = [g.court[1], g.court[0]];
       g.currentSet++;
       g.points = [0, 0];
       g.serve = null; // el primer saque del set se define con el primer punto
       g.phase = 'playing';
       g.setWinner = null;
-      addLog(g, `Comienza el set ${g.currentSet}${change ? `: entra ${name(change.inn)}, sale ${name(change.out)}` : ''}`, by);
+      addLog(g, `Comienza el set ${g.currentSet}${change ? `: entra ${name(change.inn)}, sale ${name(change.out)}` : ': cambio de lado'}`, by);
       break;
     }
     case 'resetSet': {
@@ -258,7 +271,9 @@ function apply(g, cmd, { admin = false } = {}) {
       const totalSets = keep('totalSets');
       const decidingSetPoints = keep('decidingSetPoints');
       const rotation = keep('rotation');
+      const overtime = keep('overtime');
       if (!POINTS_OPTIONS.includes(pointsPerSet)) return fail('Puntos por set inválidos');
+      if (!OVERTIME_OPTIONS.includes(overtime)) return fail('Alargue inválido');
       if (!SETS_OPTIONS.includes(totalSets)) return fail('Cantidad de sets inválida');
       if (!DECIDING_OPTIONS.includes(decidingSetPoints)) return fail('Puntos del set decisivo inválidos');
       if (!ROTATION_OPTIONS.includes(rotation)) return fail('Rotación inválida');
@@ -269,7 +284,7 @@ function apply(g, cmd, { admin = false } = {}) {
         if (g.currentSet > totalSets) return fail('El partido ya superó esa cantidad de sets');
       }
       pushUndo(g, 'Cambio de configuración');
-      g.config = { pointsPerSet, totalSets, decidingSetPoints, rotation };
+      g.config = { pointsPerSet, totalSets, decidingSetPoints, rotation, overtime };
       // Si el formato cambió, el partido puede quedar decidido o reabierto.
       if (openMatch(g) && g.phase === 'matchOver') {
         g.phase = 'setOver';
@@ -286,7 +301,7 @@ function apply(g, cmd, { admin = false } = {}) {
         }
       }
       evaluateSet(g);
-      addLog(g, `Config: sets a ${pointsPerSet}, mejor de ${totalSets}, decisivo a ${decidingSetPoints}, rotación ${rotation === 'winnerStays' ? 'ganador se queda' : 'mismos equipos'}`, by);
+      addLog(g, `Config: sets a ${pointsPerSet}, mejor de ${totalSets}, decisivo a ${decidingSetPoints}, ${overtimeLabel(overtime)}, rotación ${rotation === 'winnerStays' ? 'ganador se queda' : 'mismos equipos'}`, by);
       break;
     }
     case 'setVoice': {
@@ -371,6 +386,7 @@ function publicState(room, g) {
     serve: g.serve,
     currentSet: g.currentSet,
     target: targetPoints(g),
+    maxPoints: maxPoints(g),
     decidingSet: isDecidingSet(g),
     setsToWin: setsToWin(g),
     phase: g.phase,
@@ -406,6 +422,9 @@ function hydrate(raw) {
     if (g.voice.lang === 'es-ES') g.voice.lang = DEFAULT_VOICE.lang;
     g.voice.v = 2;
   }
+  // La voz siempre es en español: idiomas ya no ofrecidos (p. ej. inglés) vuelven al predeterminado.
+  if (!VOICE_LANGS.includes(g.voice.lang)) g.voice.lang = DEFAULT_VOICE.lang;
+  if (!OVERTIME_OPTIONS.includes(g.config.overtime)) g.config.overtime = DEFAULT_CONFIG.overtime;
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];
   return g;

@@ -24,6 +24,31 @@
       }
     ]
   },
+  "overtime": {
+    "default": 99,
+    "options": [
+      {
+        "value": 0,
+        "label": "Sin alargue (muerte súbita): gana quien llegue primero"
+      },
+      {
+        "value": 2,
+        "label": "Alargue hasta 2 puntos más (a 10 → máx. 12)"
+      },
+      {
+        "value": 4,
+        "label": "Alargue hasta 4 puntos más (a 10 → máx. 14)"
+      },
+      {
+        "value": 6,
+        "label": "Alargue hasta 6 puntos más (a 10 → máx. 16)"
+      },
+      {
+        "value": 99,
+        "label": "Alargue sin tope (ganar por 2)"
+      }
+    ]
+  },
   "decidingSetPoints": {
     "default": 15,
     "options": [
@@ -222,10 +247,6 @@
       {
         "value": "es-ES",
         "label": "Español (España)"
-      },
-      {
-        "value": "en-US",
-        "label": "English"
       }
     ]
   }
