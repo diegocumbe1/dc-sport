@@ -27,6 +27,9 @@ const MIN_TEAMS = Math.min(...TEAM_COUNTS);
 const MAX_TEAMS = Math.max(...TEAM_COUNTS);
 const VOICE_REPEAT_MAX = Math.max(...values('voiceRepeat'));
 const VOICE_LANGS = values('voiceLang');
+const VOICE_PRESENCE = values('voicePresence');
+const VOICE_GAIN_MIN = 0.5;
+const VOICE_GAIN_MAX = 2.5;
 const MAX_UNDO = 200;
 const MAX_LOG = 100;
 const MAX_NAME = 20;
@@ -38,7 +41,9 @@ const DEFAULT_CONFIG = {
   rotation: OPTIONS.rotation.default,
   overtime: OPTIONS.overtime.default,
 };
-const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, v: 2 };
+// gain: volumen de la voz grabada (1 = original). presence: realce de medios-altos en dB
+// para que la voz se distinga sobre la música. Ambos se aplican en el navegador al anunciar.
+const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, gain: 1.5, presence: OPTIONS.voicePresence.default, v: 2 };
 
 const defaultTeam = i => ({ name: PALETTE[i % PALETTE.length].label, color: PALETTE[i % PALETTE.length].value });
 // Nombre por defecto de un equipo sin nombre: el nombre de su color, o «EQUIPO N» si el color no está en la paleta.
@@ -312,8 +317,13 @@ function apply(g, cmd, { admin = false } = {}) {
       if (!nonNegInt(v.repeat, VOICE_REPEAT_MAX) || v.repeat < 1) return fail(`Repeticiones entre 1 y ${VOICE_REPEAT_MAX}`);
       if (!inRange(v.interval, 1, 30)) return fail('Intervalo entre 1 y 30 segundos');
       const lang = VOICE_LANGS.includes(v.lang) ? v.lang : DEFAULT_VOICE.lang;
-      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang, v: 2 };
-      addLog(g, `Voz ${v.enabled ? `activada (x${v.repeat}, cada ${v.interval} s, vel. ${g.voice.rate})` : 'desactivada'}`, by);
+      // Volumen y presencia son opcionales: si no vienen se conservan los actuales.
+      const gain = v.gain === undefined ? g.voice.gain : v.gain;
+      const presence = v.presence === undefined ? g.voice.presence : v.presence;
+      if (!inRange(gain, VOICE_GAIN_MIN, VOICE_GAIN_MAX)) return fail(`Volumen de la voz entre ${VOICE_GAIN_MIN} y ${VOICE_GAIN_MAX}`);
+      if (!VOICE_PRESENCE.includes(presence)) return fail('Presencia de la voz inválida');
+      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang, gain: Math.round(gain * 10) / 10, presence, v: 2 };
+      addLog(g, `Voz ${v.enabled ? `activada (x${v.repeat}, cada ${v.interval} s, vel. ${g.voice.rate}, volumen ${g.voice.gain}×, presencia ${presence} dB)` : 'desactivada'}`, by);
       break;
     }
     case 'setScore': {
@@ -424,6 +434,8 @@ function hydrate(raw) {
   }
   // La voz siempre es en español: idiomas ya no ofrecidos (p. ej. inglés) vuelven al predeterminado.
   if (!VOICE_LANGS.includes(g.voice.lang)) g.voice.lang = DEFAULT_VOICE.lang;
+  if (!inRange(g.voice.gain, VOICE_GAIN_MIN, VOICE_GAIN_MAX)) g.voice.gain = DEFAULT_VOICE.gain;
+  if (!VOICE_PRESENCE.includes(g.voice.presence)) g.voice.presence = DEFAULT_VOICE.presence;
   if (!OVERTIME_OPTIONS.includes(g.config.overtime)) g.config.overtime = DEFAULT_CONFIG.overtime;
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];

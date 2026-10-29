@@ -2,12 +2,14 @@
 # Genera los audios del anunciador (public/audio/voz/*.wav) con la voz «Paulina» de macOS.
 # Requiere macOS (`say`) y ffmpeg (brew install ffmpeg). Se ejecuta una sola vez o al cambiar frases.
 #
-# Por qué audios grabados y no la voz del navegador: en iPhone la voz del navegador PAUSA la
-# música (Spotify); un audio normal suena encima sin pausarla. Como una página web no puede bajar
-# el volumen de otra app, cada audio se comprime y se refuerza (~2× más fuerte) para oírse
-# sobre la música, y cada anuncio empieza con un «ding».
+# Por qué audios grabados y no la voz del navegador: la voz del navegador suena distinta en cada
+# equipo y en iPhone falla más; los audios suenan igual en todos y cada anuncio empieza con un «ding».
 #
 # Formato: WAV PCM 16 bits, mono, 22 050 Hz. El navegador los une en un solo WAV por anuncio.
+#
+# El VOLUMEN y la PRESENCIA (realce para oírse sobre la música) NO se ajustan aquí: son ajustes de
+# la sala en Administración → «Voz del marcador» y se aplican en el navegador al anunciar.
+# Este script solo genera la voz base, neutra y con margen para poder subirla sin saturar.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=public/audio/voz
@@ -16,11 +18,13 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$OUT"
 
-# Cadena de refuerzo: recorta silencios, quita graves, realza la voz, comprime y normaliza.
+# Voz base: recorta silencios, quita graves, compresión suave (picos más parejos para poder
+# subir el volumen en el navegador sin saturar) y normaliza al nivel de la voz original
+# (-17.5 LUFS = volumen 1×) con margen en los picos.
 FILTER="silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_threshold=-45dB:stop_duration=0.08,\
-highpass=f=200,equalizer=f=3000:t=q:w=1.2:g=6,\
-acompressor=threshold=-30dB:ratio=10:attack=2:release=60:makeup=10,alimiter=limit=0.89:level=false,\
-loudnorm=I=-6:TP=-0.5:LRA=3,alimiter=limit=0.95"
+highpass=f=150,\
+acompressor=threshold=-24dB:ratio=3:attack=8:release=120:makeup=2,\
+loudnorm=I=-17.5:TP=-4:LRA=7"
 WAV_OPTS=(-ar 22050 -ac 1 -c:a pcm_s16le -map_metadata -1 -fflags +bitexact -flags:a +bitexact)
 
 clip() { # clip <clave> <texto>

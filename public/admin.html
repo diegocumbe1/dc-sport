@@ -85,13 +85,18 @@
       <label class="field">Cada cuántos segundos repite
         <input id="vInterval" type="number" min="1" max="30" step="1" value="3">
       </label>
-      <label class="field">Idioma<select id="vLang"></select></label>
+      <label class="field">Volumen de la voz (<span id="vGainLbl">1.5</span>×)
+        <input id="vGain" type="range" min="0.5" max="2.5" step="0.1" value="1.5">
+      </label>
+      <label class="field">Presencia (que se oiga sobre la música)<select id="vPresence"></select></label>
+      <label class="field">Idioma (solo voz de respaldo)<select id="vLang"></select></label>
       <div style="align-self:end" class="btns">
         <button type="submit">Guardar voz</button>
         <button type="button" class="alt" id="vTest">Probar aquí</button>
       </div>
     </form>
     <p class="muted">Se escucha en el marcador o, en modo solo celular, en el control. En ese dispositivo hay que tocar «🔊 Activar voz» una vez (lo exige el navegador).</p>
+    <p class="muted"><b>Volumen y presencia</b> solo afectan a la voz del marcador (no a la música ni al ding). Si la voz se pierde con la música, sube primero la <b>presencia</b> (más clara sin sonar ronca) y luego el volumen. Pruébalo con «Probar aquí» y guarda: el cambio llega en vivo a la pantalla que anuncia.</p>
   </section>
 
   <section class="card">
@@ -149,7 +154,7 @@
     OPTS = o;
     MAX_TEAMS = Math.max(...o.teamCount.options.map(x => x.value));
     PALETTE = o.teamColors;
-    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['overtime', 'overtime'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang']]) DC.fillSelect($(id), o[key]);
+    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['overtime', 'overtime'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang'], ['vPresence', 'voicePresence']]) DC.fillSelect($(id), o[key]);
     render(true);
   });
   $('pinRoom').textContent = 'Sala: ' + DC.room;
@@ -267,6 +272,7 @@
       const v = s.voice;
       $('vEnabled').value = v.enabled ? '1' : '0'; $('vRate').value = v.rate; $('vRateLbl').textContent = v.rate;
       $('vRepeat').value = v.repeat; $('vInterval').value = v.interval; $('vLang').value = v.lang;
+      $('vGain').value = v.gain; $('vGainLbl').textContent = v.gain; $('vPresence').value = v.presence;
     }
     if (fillForms || !document.activeElement?.closest?.('#scoreForm')) {
       $('ptsA').value = s.points[0]; $('ptsB').value = s.points[1];
@@ -292,8 +298,9 @@
     // totalSets 0 = partido abierto (sin «mejor de N»), ver config/options.json.
     run({ type: 'setConfig', pointsPerSet: num('pps'), totalSets: 0, rotation: $('rotation').value, overtime: num('overtime') }, 'Configuración guardada');
   };
-  const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value });
+  const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value, gain: num('vGain'), presence: num('vPresence') });
   $('vRate').oninput = () => { $('vRateLbl').textContent = $('vRate').value; };
+  $('vGain').oninput = () => { $('vGainLbl').textContent = $('vGain').value; };
   $('voiceForm').onsubmit = e => { e.preventDefault(); run({ type: 'setVoice', voice: voiceCfg() }, 'Voz guardada'); };
   $('vTest').onclick = () => {
     if (!state) return;

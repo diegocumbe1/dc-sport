@@ -229,6 +229,31 @@
       }
     ]
   },
+  "voicePresence": {
+    "default": 6,
+    "options": [
+      {
+        "value": 0,
+        "label": "Sin realce"
+      },
+      {
+        "value": 3,
+        "label": "Suave"
+      },
+      {
+        "value": 6,
+        "label": "Media (recomendada)"
+      },
+      {
+        "value": 9,
+        "label": "Alta (campo abierto / música fuerte)"
+      },
+      {
+        "value": 12,
+        "label": "Máxima"
+      }
+    ]
+  },
   "voiceLang": {
     "default": "es-CO",
     "options": [

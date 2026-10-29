@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Prueba de audio · DC Sport Score</title>
+<script>
+  // Respuesta de Spotify para /prueba-spotify (comparte esta Redirect URI): se reenvía antes de procesar nada.
+  if (new URLSearchParams(location.search).get('state') === 'sdk') location.replace('/prueba-spotify' + location.search);
+</script>
 <link rel="stylesheet" href="/css/app.css">
 <style>
   .wrap { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
@@ -67,10 +71,379 @@
     <button class="ok" data-t="plain" data-f="fuerte-ding">▶ Probar ding + reforzado</button>
   </div>
 
+  <h2 style="margin-top:28px">Ronda 3 · ¿qué pausa la música en el marcador?</h2>
+  <p class="muted">Con Spotify sonando, <b>recarga la página</b> y toca <b>solo una</b> prueba. Anota si pausa la música. Repite con la siguiente.</p>
+
+  <div class="test">
+    <h3>7 · Igual que el marcador</h3>
+    <p class="muted">Usa exactamente el mismo código que el marcador («Azul, 10. Rojo, 9…»).</p>
+    <button class="ok" data-r="engine">▶ Probar voz del marcador</button>
+  </div>
+
+  <div class="test">
+    <h3>8 · Audio armado en el celular (nuevo cada vez)</h3>
+    <p class="muted">Mismo anuncio unido en el celular, pero en un reproductor nuevo y sin desbloqueo previo.</p>
+    <button class="alt" data-r="blob">▶ Probar audio armado</button>
+  </div>
+
+  <div class="test">
+    <h3>9 · Un audio WAV directo del servidor</h3>
+    <p class="muted">Un solo archivo WAV («punto de set para»), como la prueba 6 pero en WAV.</p>
+    <button class="alt" data-r="wav">▶ Probar WAV directo</button>
+  </div>
+
+  <h2 style="margin-top:28px">Ronda 4 · formato y modo de audio</h2>
+  <p class="muted">Igual que antes: Spotify sonando, <b>recarga la página</b>, toca <b>solo una</b> prueba y anota qué pasa con la música: <b>sigue</b>, <b>se pausa</b> o <b>se pausa y vuelve sola</b>.</p>
+
+  <div class="test">
+    <h3>10 · Repetir la prueba 6 (m4a)</h3>
+    <p class="muted">Control: confirma que la 6 sigue sin pausar la música hoy.</p>
+    <button class="ok" data-q="m4a">▶ Probar m4a (como la 6)</button>
+  </div>
+
+  <div class="test">
+    <h3>11 · WAV en modo «ambient»</h3>
+    <p class="muted">El mismo WAV de la 9, pidiendo al sistema mezclarse con la música.</p>
+    <button class="alt" data-q="wav-ambient">▶ Probar WAV ambient</button>
+  </div>
+
+  <div class="test">
+    <h3>12 · WAV en modo «transient»</h3>
+    <p class="muted">Modo de aviso corto: fíjate si Spotify <b>vuelve solo</b> al terminar.</p>
+    <button class="alt" data-q="wav-transient">▶ Probar WAV transient</button>
+  </div>
+
+  <div class="test">
+    <h3>13 · Anuncio en partes m4a seguidas</h3>
+    <p class="muted">«ding · Azul, 10 · Rojo, 9 · Punto de set para Azul» como varios m4a en fila (cómo quedaría el marcador si el formato es la causa).</p>
+    <button class="alt" data-q="seq">▶ Probar partes m4a</button>
+  </div>
+
+  <h2 style="margin-top:28px">Ronda 5 · Web Audio (como un juego)</h2>
+  <p class="muted">Otra forma de reproducir que <b>no</b> aparece en la Isla Dinámica como «lo que está sonando». <b>Desactiva el interruptor de silencio</b> (en este modo lo respeta). Spotify sonando, <b>recarga</b>, toca <b>una</b> prueba. Fíjate también si en la Isla Dinámica sigue apareciendo Spotify.</p>
+
+  <div class="test">
+    <h3>14 · Web Audio normal</h3>
+    <p class="muted">Anuncio completo «ding · Azul, 10 · Rojo, 9 · Punto de set para Azul» (volumen nuevo ~1.5×).</p>
+    <button class="ok" data-w="auto">▶ Probar Web Audio</button>
+  </div>
+
+  <div class="test">
+    <h3>15 · Web Audio en modo «ambient»</h3>
+    <p class="muted">Lo mismo, pidiendo explícitamente mezclarse con la música.</p>
+    <button class="ok" data-w="ambient">▶ Probar Web Audio ambient</button>
+  </div>
+
+  <h2 style="margin-top:28px" id="spotify">Ronda 6 · Spotify: anunciar y reanudar solo</h2>
+  <p class="muted">Simula lo que haría el marcador: suena el anuncio (iOS pausa Spotify) y al terminar el marcador le pide a Spotify, por internet, que <b>siga sonando</b>. Requiere Spotify Premium y abrir esta página por <b>https</b> (Railway o ngrok).</p>
+
+  <div class="test">
+    <h3>Paso 1 · Clave de tu app de Spotify</h3>
+    <p class="muted">Créala gratis en <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> → <b>Create app</b>. En <b>Redirect URIs</b> agrega exactamente:<br><code id="spRedirect"></code><br>Marca <b>Web API</b>, guarda y copia el <b>Client ID</b>.</p>
+    <input id="spClient" placeholder="Client ID" autocomplete="off" spellcheck="false" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#0c1220;color:var(--text);font-size:16px;margin-bottom:8px">
+    <button class="ok" id="spConnect">Conectar Spotify</button>
+  </div>
+
+  <div class="test">
+    <h3>Paso 2 · ¿Qué ve Spotify?</h3>
+    <p class="muted">Pon música en Spotify y toca para ver el dispositivo activo y si permite cambiar el volumen.</p>
+    <button class="alt" id="spState">🔍 Ver estado de Spotify</button>
+    <p class="sp-status" style="margin:10px 0 0;font-size:14px;color:#ffd166"></p>
+  </div>
+
+  <div class="test">
+    <h3>16 · Anuncio y reanudar</h3>
+    <p class="muted">Con Spotify sonando: suena el anuncio, iOS pausa la música y al terminar se pide reanudar. Anota si vuelve sola y cuánto tarda.</p>
+    <button class="ok" id="spTest">▶ Anunciar y reanudar Spotify</button>
+    <p class="sp-status" style="margin:10px 0 0;font-size:14px;color:#ffd166"></p>
+  </div>
+
+  <div class="test">
+    <h3>18 · Soltar el audio y reanudar (último intento)</h3>
+    <p class="muted">Al terminar el anuncio el navegador libera el audio, espera 1 s, le pide a Spotify «transferir y reproducir» en el iPhone y verifica si de verdad volvió a sonar.</p>
+    <button class="ok" id="spTest2">▶ Probar soltar y reanudar</button>
+    <p class="sp-status" style="margin:10px 0 0;font-size:14px;color:#ffd166"></p>
+  </div>
+
+  <div class="test">
+    <h3>19 · Esperar más + pausa y play por la API</h3>
+    <p class="muted">Como la 18, pero espera 5 s a que iOS suelte el audio del navegador y luego hace lo mismo que tú a mano: <b>pausa</b> y <b>play</b> en Spotify. Dime si se <b>escucha</b> la música.</p>
+    <button class="ok" id="spTest3">▶ Probar esperar + pausa/play</button>
+    <p class="sp-status" style="margin:10px 0 0;font-size:14px;color:#ffd166"></p>
+  </div>
+
+  <div class="test">
+    <h3>17 · Bajar volumen en vez de pausar</h3>
+    <p class="muted">Solo funciona si el paso 2 dice que el dispositivo permite volumen (en iPhone casi seguro que no). Baja Spotify al 75 %, anuncia y lo devuelve.</p>
+    <button class="alt" id="spDuck">▶ Probar bajar volumen</button>
+  </div>
+
+  <div class="test">
+    <h3>Registro</h3>
+    <pre id="spLog" style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--muted);max-height:260px;overflow:auto">—</pre>
+  </div>
+
   <div class="test">
     <button class="alt" onclick="location.reload()">↻ Recargar página</button>
   </div>
 </div>
+<script src="/js/common.js"></script>
+<script>
+  // ---------- Ronda 6: Spotify Web API (OAuth PKCE, sin servidor) ----------
+  // Permisos mínimos: ver y controlar la reproducción. Los tokens viven en este navegador (máx. 4 h).
+  const SP = {
+    redirect: location.origin + location.pathname,
+    scopes: 'user-read-playback-state user-modify-playback-state',
+    log(msg) {
+      const el = document.getElementById('spLog');
+      const t = new Date().toLocaleTimeString();
+      el.textContent = (el.textContent === '—' ? '' : el.textContent + '\n') + `[${t}] ${msg}`;
+      el.scrollTop = el.scrollHeight;
+      // También visible junto a los botones y como aviso flotante (el registro queda al final de la página).
+      document.querySelectorAll('.sp-status').forEach(s => { s.textContent = msg; });
+      DC.toast(msg);
+      // Copia al servidor (consola de npm run dev y data/debug-audio.log) para poder rastrear.
+      fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' }, body: JSON.stringify({ msg }) }).catch(() => {});
+    },
+  };
+  // Solo al servidor (sin mostrar en pantalla): detalles técnicos para la traza.
+  const remote = msg => fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' }, body: JSON.stringify({ msg }) }).catch(() => {});
+  remote(`Página cargada · ${navigator.userAgent} · audioSession: ${'audioSession' in navigator ? 'sí' : 'no'} · ${location.href.split('?')[0]}`);
+  window.addEventListener('error', e => remote(`ERROR JS: ${e.message} (${e.filename}:${e.lineno})`));
+  window.addEventListener('unhandledrejection', e => remote(`PROMESA RECHAZADA: ${e.reason && (e.reason.message || e.reason)}`));
+  const $sp = id => document.getElementById(id);
+  $sp('spRedirect').textContent = SP.redirect;
+  $sp('spClient').value = DC.local.get('spClient') || '';
+
+  const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  async function spConnect() {
+    const client = $sp('spClient').value.trim();
+    if (!client) return alert('Pega primero el Client ID');
+    if (!crypto.subtle) return alert('Abre esta página por https (Railway o ngrok) para conectar Spotify');
+    DC.local.set('spClient', client);
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+    sessionStorage.setItem('spVerifier', verifier);
+    const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+    const q = new URLSearchParams({ client_id: client, response_type: 'code', redirect_uri: SP.redirect, scope: SP.scopes, code_challenge_method: 'S256', code_challenge: challenge });
+    location.href = 'https://accounts.spotify.com/authorize?' + q;
+  }
+  async function spTokenRequest(params) {
+    const r = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: DC.local.get('spClient'), ...params }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error_description || j.error || r.status);
+    DC.local.set('spToken', { access: j.access_token, refresh: j.refresh_token || (DC.local.get('spToken') || {}).refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+  }
+  async function spAccess() {
+    const t = DC.local.get('spToken');
+    if (!t) throw new Error('Primero conecta Spotify (paso 1)');
+    if (Date.now() > t.exp) { await spTokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh }); return DC.local.get('spToken').access; }
+    return t.access;
+  }
+  async function spApi(method, path, body) {
+    const r = await fetch('https://api.spotify.com/v1' + path, {
+      method, headers: { Authorization: 'Bearer ' + await spAccess(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await r.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch {}
+    remote(`API ${method} ${path} → ${r.status}${r.ok ? '' : ' · ' + text.slice(0, 400)}`);
+    return { ok: r.ok, status: r.status, data, error: data && data.error ? data.error.message || data.error.reason : null };
+  }
+  // Vuelta desde Spotify con ?code=…
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    if (q.get('error')) SP.log('Spotify rechazó la conexión: ' + q.get('error'));
+    if (!q.get('code')) { if (DC.local.get('spToken')) SP.log('Spotify conectado ✔'); return; }
+    try {
+      await spTokenRequest({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: SP.redirect, code_verifier: sessionStorage.getItem('spVerifier') || '' });
+      SP.log('Spotify conectado ✔');
+    } catch (e) { SP.log('Error al conectar: ' + e.message); }
+    history.replaceState(null, '', SP.redirect + '#spotify');
+    document.getElementById('spotify').scrollIntoView();
+  })();
+
+  async function spState() {
+    SP.log('Consultando Spotify…');
+    try {
+      const r = await spApi('GET', '/me/player');
+      if (r.status === 204 || !r.data) return SP.log('No hay reproducción activa: pon música en Spotify y vuelve a tocar.'), null;
+      if (!r.ok) return SP.log(`Error ${r.status}: ${r.error}`), null;
+      const d = r.data.device;
+      remote('Estado completo: ' + JSON.stringify({ device: d, is_playing: r.data.is_playing, actions: r.data.actions, item: r.data.item && r.data.item.name }));
+      SP.log(`Dispositivo: ${d.name} (${d.type}) · sonando: ${r.data.is_playing ? 'sí' : 'no'} · volumen: ${d.volume_percent ?? '?'} % · permite cambiar volumen: ${d.supports_volume ? 'SÍ' : 'NO'}`);
+      return r.data;
+    } catch (e) { SP.log(e.message); return null; }
+  }
+  // Anuncio de prueba: el mismo audio del marcador, iniciado dentro del toque.
+  function playAnnouncement() {
+    if (!blobUrl) { alert('El audio aún se está preparando, intenta en un segundo'); return null; }
+    const a = new Audio(blobUrl);
+    a.play().catch(e => SP.log('No se pudo reproducir: ' + e.message));
+    return a;
+  }
+  async function spResume(deviceId, t0) {
+    for (let i = 1; i <= 3; i++) {
+      const r = await spApi('PUT', '/me/player/play' + (deviceId ? '?device_id=' + encodeURIComponent(deviceId) : ''));
+      if (r.ok) return SP.log(`Reanudar → OK en ${Date.now() - t0} ms (intento ${i}). ¿Volvió la música?`);
+      SP.log(`Reanudar → error ${r.status}: ${r.error}${i < 3 ? ' · reintento…' : ''}`);
+      await new Promise(res => setTimeout(res, 700));
+    }
+  }
+  let lastDevice = null;
+  $sp('spConnect').onclick = spConnect;
+  $sp('spState').onclick = async () => { const s = await spState(); if (s) lastDevice = s.device; };
+  $sp('spTest').onclick = () => {
+    const a = playAnnouncement(); // primero, dentro del toque
+    if (!a) return;
+    SP.log('Anuncio sonando…');
+    spApi('GET', '/me/player').then(r => { if (r.ok && r.data) lastDevice = r.data.device; }).catch(() => {});
+    a.onended = async () => {
+      SP.log('Anuncio terminado, pidiendo reanudar…');
+      // Qué ve Spotify justo después del anuncio (¿sigue activo el iPhone?).
+      const st = await spApi('GET', '/me/player').catch(e => ({ error: e.message }));
+      remote('Tras el anuncio: ' + JSON.stringify(st && st.data ? { device: st.data.device, is_playing: st.data.is_playing } : st));
+      spResume(lastDevice && lastDevice.id, Date.now());
+    };
+  };
+  const wait = ms => new Promise(res => setTimeout(res, ms));
+  $sp('spTest2').onclick = () => {
+    const a = playAnnouncement(); // dentro del toque
+    if (!a) return;
+    SP.log('18 · Anuncio sonando…');
+    spApi('GET', '/me/player').then(r => { if (r.ok && r.data) lastDevice = r.data.device; }).catch(() => {});
+    a.onended = async () => {
+      // Soltar el audio: sin fuente el navegador deja de ser «lo que está sonando».
+      a.removeAttribute('src');
+      a.load();
+      if (navigator.audioSession) { try { navigator.audioSession.type = 'ambient'; } catch {} }
+      if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } catch {} }
+      SP.log('18 · Anuncio terminado, audio liberado. Esperando 1 s…');
+      await wait(1000);
+      const id = lastDevice && lastDevice.id;
+      const t0 = Date.now();
+      for (let i = 1; i <= 4; i++) {
+        const r = await spApi('PUT', '/me/player', { device_ids: id ? [id] : [], play: true });
+        SP.log(`18 · Transferir y reproducir → ${r.status}${r.ok ? '' : ' ' + r.error} (intento ${i}, ${Date.now() - t0} ms)`);
+        await wait(1500);
+        const st = await spApi('GET', '/me/player');
+        const playing = !!(st.ok && st.data && st.data.is_playing);
+        SP.log(`18 · Spotify dice que está sonando: ${playing ? 'SÍ' : 'NO'}`);
+        if (playing) return SP.log('18 · Spotify reporta música sonando. ¿La escuchas?');
+      }
+      SP.log('18 · No volvió: iOS mantiene dormido a Spotify.');
+    };
+  };
+  $sp('spTest3').onclick = () => {
+    const a = playAnnouncement(); // dentro del toque
+    if (!a) return;
+    SP.log('19 · Anuncio sonando…');
+    spApi('GET', '/me/player').then(r => { if (r.ok && r.data) lastDevice = r.data.device; }).catch(() => {});
+    a.onended = async () => {
+      a.removeAttribute('src');
+      a.load();
+      if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } catch {} }
+      const id = lastDevice && lastDevice.id;
+      const q = id ? '?device_id=' + encodeURIComponent(id) : '';
+      SP.log('19 · Anuncio terminado. Esperando 5 s a que iOS suelte el audio…');
+      await wait(5000);
+      const p = await spApi('PUT', '/me/player/pause' + q);
+      SP.log(`19 · Pausa → ${p.status}${p.ok ? '' : ' ' + p.error}`);
+      await wait(700);
+      const t0 = Date.now();
+      const r = await spApi('PUT', '/me/player', { device_ids: id ? [id] : [], play: true });
+      SP.log(`19 · Play → ${r.status}${r.ok ? '' : ' ' + r.error} (${Date.now() - t0} ms)`);
+      await wait(1500);
+      const st = await spApi('GET', '/me/player');
+      SP.log(`19 · Spotify dice que está sonando: ${st.ok && st.data && st.data.is_playing ? 'SÍ' : 'NO'}. ¿La ESCUCHAS?`);
+    };
+  };
+  $sp('spDuck').onclick = async () => {
+    const s = await spState();
+    if (!s) return;
+    if (!s.device.supports_volume) return SP.log('Este dispositivo NO permite cambiar el volumen desde la web: queda la opción 16 (pausar y reanudar).');
+    const vol = s.device.volume_percent;
+    const r = await spApi('PUT', `/me/player/volume?volume_percent=${Math.round(vol * 0.75)}`);
+    SP.log(r.ok ? `Volumen ${vol} % → ${Math.round(vol * 0.75)} %` : `Error volumen ${r.status}: ${r.error}`);
+    const a = new Audio(blobUrl);
+    a.onended = async () => { const back = await spApi('PUT', `/me/player/volume?volume_percent=${vol}`); SP.log(back.ok ? `Volumen restaurado a ${vol} %` : 'Error al restaurar volumen'); };
+    a.play().catch(e => SP.log('No se pudo reproducir (fuera del toque): ' + e.message));
+  };
+</script>
+<script>
+  // Ronda 5: Web Audio. El WAV del anuncio se arma al cargar; al tocar se crea el AudioContext
+  // (debe nacer dentro del toque) y se reproduce el búfer.
+  let waBuf = null;
+  DC.options().then(() => setTimeout(async () => {
+    const parts = DC.scoreClips(FAKE);
+    if (parts) waBuf = await (await DC.clipBlob(parts)).arrayBuffer();
+  }, 50));
+  document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => {
+    if (!waBuf) return alert('El audio aún se está preparando, intenta en un segundo');
+    if (b.dataset.w === 'ambient') {
+      if ('audioSession' in navigator) navigator.audioSession.type = 'ambient';
+      else alert('Este navegador no permite elegir el modo: se comportará como la 14');
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    ctx.resume();
+    ctx.decodeAudioData(waBuf.slice(0)).then(buf => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+    }).catch(e => alert('No se pudo reproducir: ' + e.message));
+  });
+
+  // Ronda 4
+  const hasSession = 'audioSession' in navigator;
+  const SEQ = ['ding', 'c_azul', 'n10', 'c_rojo', 'n9', 'punto_de_set_para', 'c_azul'];
+  function playSeq() {
+    // Un solo reproductor, iniciado dentro del toque; cada parte entra al terminar la anterior.
+    const a = new Audio();
+    let i = 0;
+    const next = () => {
+      if (i >= SEQ.length) return;
+      a.src = `/audio-test/seq/${SEQ[i++]}.m4a`;
+      a.play().catch(e => alert('No se pudo reproducir: ' + e.message));
+    };
+    a.onended = next;
+    next();
+  }
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
+    const q = b.dataset.q;
+    if (q === 'm4a') return new Audio('/audio-test/fuerte-ding.m4a').play();
+    if (q === 'seq') return playSeq();
+    if (hasSession) navigator.audioSession.type = q === 'wav-ambient' ? 'ambient' : 'transient';
+    else alert('Este navegador no permite elegir el modo de audio: se comportará como la 9');
+    new Audio('/audio/voz/punto_de_set_para.wav').play().catch(e => alert(e.message));
+  });
+</script>
+<script>
+  // Ronda 3: estado de ejemplo con los colores de options.json.
+  const FAKE = {
+    teams: [{ name: 'AZUL', color: '#1e6fd9' }, { name: 'ROJO', color: '#d62f4b' }],
+    allTeams: [{ name: 'AZUL', color: '#1e6fd9' }, { name: 'ROJO', color: '#d62f4b' }],
+    points: [10, 9], sets: [0, 0], serve: 0, phase: 'playing', target: 11, maxPoints: null,
+    rotationMode: false, nextIn: null,
+  };
+  // El audio de la prueba 8 se arma al cargar: iOS solo deja sonar lo que arranca dentro del toque.
+  let blobUrl = null;
+  DC.options().then(() => setTimeout(async () => {
+    const parts = DC.scoreClips(FAKE);
+    if (parts) blobUrl = URL.createObjectURL(await DC.clipBlob(parts));
+  }, 50));
+  document.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+    const r = b.dataset.r;
+    if (r === 'engine') { DC.unlockAudio(); DC.announce(FAKE, { rate: 1, repeat: 1, interval: 3 }); return; }
+    if (r === 'wav') { new Audio('/audio/voz/punto_de_set_para.wav').play().catch(e => alert(e.message)); return; }
+    if (!blobUrl) return alert('El audio aún se está preparando, intenta en un segundo');
+    new Audio(blobUrl).play().catch(e => alert('No se pudo reproducir: ' + e.message));
+  });
+</script>
 <script>
   const has = 'audioSession' in navigator;
   document.getElementById('support').innerHTML =

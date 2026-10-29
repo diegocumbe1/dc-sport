@@ -248,13 +248,17 @@
     clearTimeout(voiceTimer);
     clipToken++; // invalida el anuncio grabado en curso
     if (clipAudio) clipAudio.pause();
-    if (voiceSupported) speechSynthesis.cancel();
+    // Solo se toca la voz del navegador si está hablando: en iPhone basta con usarla
+    // (incluso cancel()) para que iOS pause la música de otras apps.
+    if (ttsUsed && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
   }
   // Referencia al anuncio en curso: si el navegador lo libera de memoria, `onend` no llega
   // y las repeticiones se pierden (bug conocido de Chrome/WebKit).
   let currentUtterance = null;
+  let ttsUsed = false; // la voz del navegador no se toca hasta que haga falta (ver stopSpeaking)
   function speak(text, cfg) {
     if (!voiceSupported) return false;
+    ttsUsed = true;
     // En iOS (Safari y Chrome usan WebKit), hablar justo después de cancel() a veces no suena:
     // solo se cancela si hay algo sonando y se espera un instante antes del nuevo anuncio.
     // Sin nada sonando se habla de inmediato (el primer anuncio debe ir dentro del toque).
@@ -287,7 +291,6 @@
     else once();
     return true;
   }
-  if (voiceSupported) speechSynthesis.getVoices(); // precarga la lista de voces
 
   // ---------- Voz grabada (public/audio/voz, generada con scripts/generar-voz.sh) ----------
   // En iPhone la voz del navegador PAUSA la música (Spotify); un audio normal suena encima sin
@@ -374,8 +377,50 @@
     return parts.includes(null) ? null : ['ding', '|', ...parts];
   }
 
-  async function buildClip(parts) {
-    const data = await Promise.all(parts.filter(p => !(p in GAP)).map(loadClip));
+  // ---- Volumen y presencia de la voz (ajustes de la sala, en Administración) ----
+  // Presencia: realce tipo radio en los medios-altos (~3 kHz) para que la voz se distinga
+  // sobre la música sin subir tanto el volumen. Después, volumen y un limitador suave
+  // (en vez de recortar, redondea los picos: así no suena ronca).
+  const PRESENCE_HZ = 3000;
+  function presenceFilter(x, db) {
+    if (!db) return x;
+    // Filtro «peaking» (RBJ Audio EQ Cookbook), Q ≈ 0.9.
+    const A = Math.pow(10, db / 40);
+    const w = 2 * Math.PI * PRESENCE_HZ / CLIP_RATE;
+    const alpha = Math.sin(w) / (2 * 0.9);
+    const cos = Math.cos(w);
+    const a0 = 1 + alpha / A;
+    const b0 = (1 + alpha * A) / a0, b1 = (-2 * cos) / a0, b2 = (1 - alpha * A) / a0;
+    const a1 = (-2 * cos) / a0, a2 = (1 - alpha / A) / a0;
+    const y = new Float32Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v;
+      y[i] = v;
+    }
+    return y;
+  }
+  const SOFT_KNEE = 0.8;
+  const softLimit = v => {
+    const a = Math.abs(v);
+    if (a <= SOFT_KNEE) return v;
+    return Math.sign(v) * (SOFT_KNEE + (1 - SOFT_KNEE) * Math.tanh((a - SOFT_KNEE) / (1 - SOFT_KNEE)));
+  };
+  function shapeVoice(samples, { gain = 1, presence = 0 } = {}) {
+    if (gain === 1 && !presence) return samples;
+    const x = Float32Array.from(samples, s => s / 32768);
+    const y = presenceFilter(x, presence);
+    const out = new Int16Array(y.length);
+    for (let i = 0; i < y.length; i++) out[i] = Math.round(softLimit(y[i] * gain) * 32767);
+    return out;
+  }
+
+  async function buildClip(parts, fx) {
+    const raw = await Promise.all(parts.filter(p => !(p in GAP)).map(loadClip));
+    // El ding no se procesa (es un tono de aviso); solo la voz.
+    const keys = parts.filter(p => !(p in GAP));
+    const data = raw.map((d, i) => (keys[i] === 'ding' ? d : shapeVoice(d, fx)));
     const chunks = [];
     let k = 0;
     let prevWord = false;
@@ -394,7 +439,7 @@
   async function playClips(parts, c) {
     const token = ++clipToken;
     let blob;
-    try { blob = await buildClip(parts); } catch { return false; }
+    try { blob = await buildClip(parts, { gain: c.gain, presence: c.presence }); } catch { return false; }
     if (token !== clipToken) return true; // llegó un anuncio más nuevo
     const el = clipEl();
     if (clipUrl) URL.revokeObjectURL(clipUrl);
@@ -425,12 +470,18 @@
     common.concat(palette.map(p => colorKey(p.label))).forEach(k => loadClip(k).catch(() => {}));
   }
   // Anuncia el marcador: voz grabada si hay audios para todo; si no, la voz del navegador.
+  // Aviso (una vez por carga) cuando se usa la voz del navegador: en iPhone pausa la música.
+  let fallbackWarned = false;
+  function fallbackSpeak(s, cfg, reason) {
+    if (!fallbackWarned) { fallbackWarned = true; toast(`Voz de respaldo (${reason}): en iPhone puede pausar la música`, 'bad'); }
+    return speak(scoreSpeech(s), cfg);
+  }
   function announce(s, cfg) {
-    const c = { rate: 1, repeat: 1, interval: 3, ...cfg };
+    const c = { rate: 1, repeat: 1, interval: 3, gain: 1.5, presence: 6, ...cfg };
     const parts = audioSupported && palette.length ? scoreClips(s) : null;
     stopSpeaking();
-    if (!parts) return speak(scoreSpeech(s), cfg);
-    playClips(parts, c).then(ok => { if (!ok) speak(scoreSpeech(s), cfg); });
+    if (!parts) return fallbackSpeak(s, cfg, !palette.length ? 'sin colores cargados' : 'sin audio para este anuncio');
+    playClips(parts, c).then(ok => { if (!ok) fallbackSpeak(s, cfg, 'no se pudieron descargar los audios'); });
     return true;
   }
 
@@ -583,5 +634,5 @@
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
   options().then(o => { palette = o.teamColors || []; }).catch(() => {});
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
+  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
 })();
