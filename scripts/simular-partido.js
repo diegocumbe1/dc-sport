@@ -12,8 +12,33 @@ if (!room) {
   process.exit(1);
 }
 const pause = Number(ms);
+
+// Entrar a una sala la crea si no existe, y una sala sin «mejor de N» nunca termina:
+// se revisa antes para no inventar una sala ni simular un partido sin fin.
+async function checkRoom() {
+  const res = await fetch(`${url}/api/rooms/${room}`).catch(e => {
+    console.error(`No se pudo conectar a ${url}: ${e.message}`);
+    process.exit(1);
+  });
+  if (res.status === 404) {
+    console.error(`La sala ${room} no existe. Copia el código sala=… del enlace del marcador.`);
+    process.exit(1);
+  }
+  const s = await res.json();
+  if (s.error) {
+    console.error(s.error);
+    process.exit(1);
+  }
+  if (s.openMatch) {
+    console.error(`La sala ${room} no tiene «mejor de N»: el partido no terminaría nunca.`);
+    process.exit(1);
+  }
+}
 const wait = t => new Promise(resolve => setTimeout(resolve, t));
 
+checkRoom().then(simulate);
+
+function simulate() {
 const socket = io(url, { transports: ['websocket'] });
 let state = null;
 let n = 0;
@@ -40,3 +65,4 @@ socket.on('connect', () => socket.emit('join', { room, role: 'control', team: nu
   console.log(`Fin: ${state.phase} · sets ${state.sets.join('-')}`);
   socket.close();
 }));
+}
