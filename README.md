@@ -51,6 +51,7 @@ ADMIN_PIN=5678 npm start
 | `/control?sala=voley`                | Control de ambos equipos (celular en horizontal)                               |
 | `/control?sala=voley&equipo=a`       | Control de **un solo lado** (izquierdo = A, derecho = B), como un pulsador     |
 | `/control?sala=voley&modo=uno`       | **Solo celular**: control + marcador + voz (con parlante Bluetooth, sin TV)     |
+| `/control?sala=voley&modo=juez`      | **Modo juez**: un toque suma al instante, deshacer grande e invertir lados      |
 | `/admin?sala=voley`                  | Administración protegida con PIN                                              |
 | `/guia`                              | **Guía de uso** pública con capturas (para compartir con jugadores)            |
 | `/api/health`                        | Estado del servidor (para Render)                                             |

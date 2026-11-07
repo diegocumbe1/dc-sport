@@ -133,6 +133,19 @@ const setup = (room, body) => fetch(`${BASE}/api/rooms/${room}/setup`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 }).then(async r => ({ status: r.status, ...(await r.json()) }));
 
+
+test('crear tablero: orden de saque opcional, y reconfigurar sin él lo quita', async () => {
+  const made = await setup('saque1', { teams: [{ name: 'Rojo' }, { name: 'Azul' }], serveOrders: [[5, 8, 21, 0, 10], [1, 0, 34, 10, 6]], firstServer: 1 });
+  assert.equal(made.status, 200);
+  assert.equal(made.state.hasServeOrder, true);
+  assert.equal(made.state.serve, 1);
+  assert.equal(made.state.serveNumber, 1);
+  const again = await setup('saque1', { teams: [{ name: 'Rojo' }, { name: 'Azul' }] });
+  assert.equal(again.state.hasServeOrder, false);
+  assert.equal(again.state.serve, null);
+  assert.equal((await setup('saque2', { teams: [{}, {}], serveOrders: [[100]] })).status, 400);
+});
+
 test('crear tablero desde el inicio con N equipos', async () => {
   const r = await setup('torneo', { teams: [{ name: 'Leones' }, { name: '' }, { name: 'Tigres', color: '#00aa00' }], pointsPerSet: 15, rotation: 'winnerStays' });
   assert.equal(r.ok, true);

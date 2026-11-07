@@ -201,6 +201,13 @@
       const next = s.rotationMode && s.nextIn !== null ? ` Se prepara ${spoken(s.allTeams[s.nextIn].name)}.` : '';
       return `¡Set para ${spoken(s.teams[w].name)}! Quedó ${s.points[w]} a ${s.points[1 - w]}.${next}`;
     }
+    // Con orden de saque el anuncio es corto: marcador (primero quien saca) y quién saca.
+    if (s.hasServeOrder) {
+      const srv = s.serve === 1 ? 1 : 0;
+      const saca = `Saca ${[A, B][srv]}${s.serveNumber !== null ? ` ${s.serveNumber}` : ''}.`;
+      if (a === b) return `${a === 0 ? 'Cero a cero' : `Empate a ${a}`}. ${saca}${a && s.maxPoints && a === s.maxPoints - 1 ? ' Punto decisivo.' : ''}`;
+      return `${s.points[srv]} a ${s.points[1 - srv]}. ${saca}${Math.max(a, b) >= s.target - 1 ? ` Punto de set para ${[A, B][a > b ? 0 : 1]}.` : ''}`;
+    }
     if (a === b && a === 0) return `${A} contra ${B}. Cero a cero.`;
     // Regla de canto: primero el equipo que tiene el saque (quien ganó el último punto).
     const first = s.serve === 1 ? 1 : 0;
@@ -298,7 +305,7 @@
   // al inicio, y se reproduce con un único <audio> desbloqueado en el primer toque (iOS bloquea
   // audios que no nacen de un toque). Si falta algún audio, se usa la voz del navegador.
   const CLIP_RATE = 22050;
-  const CLIP_MAX_NUMBER = 60;
+  const CLIP_MAX_NUMBER = 99;
   const GAP = { ',': 0.18, '|': 0.35 }; // pausas (s): coma y punto
   const WORD_GAP = 0.04;
   const clipCache = new Map(); // clave → Promise<Int16Array>
@@ -353,6 +360,7 @@
     const n = x => (Number.isInteger(x) && x >= 0 && x <= CLIP_MAX_NUMBER ? 'n' + x : null);
     const [a, b] = s.points;
     let parts;
+    let lead = '|'; // pausa después del «ding»
     if (s.phase === 'matchOver') {
       const w = s.matchWinner;
       parts = [team(s.teams[w]), 'gana_el_partido', '|', 'sets', n(s.sets[w]), 'a', n(s.sets[1 - w])];
@@ -360,6 +368,19 @@
       const w = s.setWinner;
       parts = ['set_para', team(s.teams[w]), '|', 'quedo', n(s.points[w]), 'a', n(s.points[1 - w])];
       if (s.rotationMode && s.nextIn !== null) parts.push('|', 'se_prepara', team(s.allTeams[s.nextIn]));
+    } else if (s.hasServeOrder) {
+      // Con orden de saque el anuncio es corto: marcador (primero quien saca) y quién saca.
+      const srv = s.serve === 1 ? 1 : 0;
+      const names = s.teams.map(team);
+      const saca = ['saca', names[srv], ...(s.serveNumber !== null ? [n(s.serveNumber)] : [])];
+      lead = ',';
+      if (a === b) {
+        parts = [...(a === 0 ? ['cero_a_cero'] : ['empate_a', n(a)]), ',', ...saca];
+        if (a && s.maxPoints && a === s.maxPoints - 1) parts.push(',', 'punto_decisivo');
+      } else {
+        parts = [n(s.points[srv]), 'a', n(s.points[1 - srv]), ',', ...saca];
+        if (Math.max(a, b) >= s.target - 1) parts.push(',', 'punto_de_set_para', names[a > b ? 0 : 1]);
+      }
     } else if (a === 0 && b === 0) {
       parts = [team(s.teams[0]), 'contra', team(s.teams[1]), '|', 'cero_a_cero'];
     } else {
@@ -374,7 +395,7 @@
         if (Math.max(a, b) >= s.target - 1) parts.push('|', 'punto_de_set_para', names[a > b ? 0 : 1]);
       }
     }
-    return parts.includes(null) ? null : ['ding', '|', ...parts];
+    return parts.includes(null) ? null : ['ding', lead, ...parts];
   }
 
   // ---- Volumen y presencia de la voz (ajustes de la sala, en Administración) ----
@@ -460,13 +481,15 @@
   }
   // Debe llamarse dentro de un toque: deja el <audio> habilitado para los anuncios siguientes
   // y precarga los audios más usados.
-  function unlockAudio() {
+  function unlockAudio(s) {
     if (!audioSupported) return;
     const el = clipEl();
     el.src = URL.createObjectURL(makeWav(new Int16Array(CLIP_RATE / 20)));
     el.play().catch(() => {});
     const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
     for (let i = 0; i <= 30; i++) common.push('n' + i);
+    // Números del orden de saque: se precargan para que el primer anuncio de cada uno no se demore.
+    if (s) for (const t of s.allTeams) for (const j of t.serveOrder || []) common.push('n' + j);
     common.concat(palette.map(p => colorKey(p.label))).forEach(k => loadClip(k).catch(() => {}));
   }
   // Anuncia el marcador: voz grabada si hay audios para todo; si no, la voz del navegador.
@@ -476,7 +499,9 @@
     if (!fallbackWarned) { fallbackWarned = true; toast(`Voz de respaldo (${reason}): en iPhone puede pausar la música`, 'bad'); }
     return speak(scoreSpeech(s), cfg);
   }
-  function announce(s, cfg) {
+  const SERVE_ORDER_RATE = 1.4; // velocidad mínima de la voz con orden de saque
+  function announce(s, voiceCfg) {
+    const cfg = s.hasServeOrder ? { ...voiceCfg, rate: Math.max(voiceCfg.rate || 1, SERVE_ORDER_RATE) } : voiceCfg;
     const c = { rate: 1, repeat: 1, interval: 3, gain: 1.5, presence: 6, ...cfg };
     const parts = audioSupported && palette.length ? scoreClips(s) : null;
     stopSpeaking();
@@ -510,11 +535,11 @@
       paint();
       if (!enabledInRoom(s) || (!voiceSupported && !audioSupported)) { stopSpeaking(); return; }
       if (!voiceOn || !prev) return;
-      const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet;
+      const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet || prev.serveNumber !== s.serveNumber;
       if (!changed) return;
       // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
       clearTimeout(debounce);
-      debounce = setTimeout(() => announce(last, last.voice), 600);
+      debounce = setTimeout(() => announce(last, last.voice), s.hasServeOrder ? 200 : 600);
     }
     // Debe llamarse dentro de un toque/clic del usuario (desbloquea el audio en móviles).
     function unlock() {
@@ -524,7 +549,7 @@
         return false;
       }
       voiceOn = true;
-      unlockAudio();
+      unlockAudio(last);
       announce(last, { ...last.voice, repeat: 1 });
       paint();
       return true;

@@ -3,6 +3,9 @@
 Objetivo: sumar puntos sin tocar la pantalla, mientras el celular (o la pantalla) sigue
 conectado a un parlante Bluetooth para la voz, y opcionalmente con música sonando.
 
+> **Sin hardware:** el modo juez (`/control?sala=…&modo=juez`) ya funciona solo con el celular.
+> Lo que sigue aplica si más adelante se quiere un control físico; la lectura de teclas aún no está hecha.
+
 ## 1. Opciones de control (de más a menos recomendable)
 
 | Opción | Cómo se conecta | Ventajas | Cuidado con |

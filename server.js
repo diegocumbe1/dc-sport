@@ -275,6 +275,8 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
       overtime: body.overtime ?? draft.config.overtime,
     },
   ];
+  // Orden de saque opcional por equipo; sin él, la sala queda sin orden.
+  steps.push({ type: 'setServeOrder', orders: body.serveOrders, first: body.firstServer });
   // Voz opcional desde el inicio: solo encender/apagar; el resto se ajusta en /admin.
   if (body.voice && typeof body.voice.enabled === 'boolean') {
     steps.push({ type: 'setVoice', voice: { ...draft.voice, enabled: body.voice.enabled } });

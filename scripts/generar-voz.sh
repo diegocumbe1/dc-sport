@@ -32,8 +32,8 @@ clip() { # clip <clave> <texto>
   ffmpeg -hide_banner -loglevel error -y -i "$TMP/$1.aiff" -af "$FILTER" "${WAV_OPTS[@]}" "$OUT/$1.wav"
 }
 
-# Números 0–60 (n0.wav … n60.wav)
-for i in $(seq 0 60); do clip "n$i" "$i"; done
+# Números 0–99 (n0.wav … n99.wav): puntajes y camisetas del orden de saque
+for i in $(seq 0 99); do clip "n$i" "$i"; done
 
 # Colores de config/options.json (la clave es el nombre en minúsculas, sin tildes)
 node -e '

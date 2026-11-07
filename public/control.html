@@ -26,6 +26,7 @@
   <div class="rotate-hint">Gira el celular a horizontal para mayor comodidad</div>
   <div class="ctl-pads">
     <div class="pad" data-team="0" style="--c: var(--team-a)" role="button" aria-label="Equipo A">
+      <div class="serve" id="serve0"></div>
       <div class="name" id="name0">EQUIPO 1</div>
       <div class="score" id="score0">0</div>
       <div class="sets">Sets <span id="sets0">0</span></div>
@@ -33,12 +34,18 @@
       <div class="fx" id="fx0"></div>
     </div>
     <div class="pad" data-team="1" style="--c: var(--team-b)" role="button" aria-label="Equipo B">
+      <div class="serve" id="serve1"></div>
       <div class="name" id="name1">EQUIPO 2</div>
       <div class="score" id="score1">0</div>
       <div class="sets">Sets <span id="sets1">0</span></div>
       <div class="hint">1 toque +1 · 2 toques −1</div>
       <div class="fx" id="fx1"></div>
     </div>
+  </div>
+  <!-- Modo juez: corregir y acomodar los lados con botones grandes -->
+  <div class="judge-bar hidden" id="judgeBar">
+    <button class="alt" id="jSwap" type="button">⇄ Invertir lados</button>
+    <button class="ok" id="jUndo" type="button">↶ Deshacer</button>
   </div>
 </div>
 
@@ -53,8 +60,8 @@
 <!-- Modo un solo dispositivo (?modo=uno): el navegador exige un toque antes de poder hablar. -->
 <div class="overlay hidden" id="voiceStart">
   <div class="box">
-    <h2>🔊 Un solo dispositivo</h2>
-    <p class="muted">Este celular es control, marcador y voz. Conecta el parlante Bluetooth y toca para activar los anuncios.</p>
+    <h2 id="vsTitle">🔊 Un solo dispositivo</h2>
+    <p class="muted" id="vsText">Este celular es control, marcador y voz. Conecta el parlante Bluetooth y toca para activar los anuncios.</p>
     <p class="muted" id="vsMusic" style="font-size:14px"></p>
     <div class="row">
       <button class="alt" id="vsSkip" type="button">Sin voz</button>
@@ -69,6 +76,7 @@
     <h2>Opciones</h2>
     <div class="row">
       <button class="alt" id="mUndo" type="button">↶ Deshacer</button>
+      <button class="alt hidden" id="mSwapServe" type="button">🏐 Cambiar quién saca</button>
       <button class="alt" id="mResetSet" type="button">Reiniciar set</button>
       <button class="danger" id="mResetMatch" type="button">Reiniciar partido</button>
     </div>
@@ -130,6 +138,24 @@
   };
   const paintScore = t => { if (padOf(t)) $('score' + t).textContent = shownPoints(t); };
 
+  // Modo juez (?modo=juez): el juez tiene el celular en la mano. Un toque suma al instante (sin
+  // esperar el doble toque), las correcciones se hacen con «Deshacer» y los lados se pueden
+  // invertir para que coincidan con lo que el juez ve desde su puesto.
+  const judge = DC.params.get('modo') === 'juez';
+  const JUDGE_GUARD_MS = 700; // ignora un toque repetido por accidente: un rally dura más que esto
+  let judgeGuardUntil = 0;
+  if (judge) {
+    document.body.classList.add('judge');
+    $('judgeBar').classList.remove('hidden');
+    $('undo').classList.add('hidden');
+    document.querySelectorAll('.pad .hint').forEach(h => { h.textContent = '1 toque +1'; });
+    $('vsTitle').textContent = '⚖️ Modo juez';
+    $('vsText').textContent = 'Toca el lado del equipo que gana el punto. Conecta el parlante Bluetooth y activa los anuncios.';
+    const paintSwap = () => document.querySelector('.ctl-pads').classList.toggle('swapped', !!DC.local.get('judgeSwap'));
+    paintSwap();
+    $('jSwap').onclick = () => { DC.local.set('judgeSwap', !DC.local.get('judgeSwap')); paintSwap(); DC.toast('Lados invertidos solo en este celular'); };
+  }
+
   // Control de un solo equipo (?equipo=a|b): una sola zona a pantalla completa, como un pulsador.
   if (DC.team !== null) {
     document.querySelector(`.pad[data-team="${1 - DC.team}"]`).remove();
@@ -139,13 +165,13 @@
   // ---------- Voz en este celular (modo un solo dispositivo) ----------
   // Mismo anunciador que el marcador (common.js); solo cambia dónde suena.
   const voice = DC.voiceAnnouncer({ btn: $('voiceBtn'), labels: { off: '🔇', idle: '🔊 Activar voz', on: '🔊' } });
-  const singleDevice = DC.params.get('modo') === 'uno';
+  const singleDevice = judge || DC.params.get('modo') === 'uno';
   // Con voz o música activas se mantiene la pantalla encendida: si el celular se bloquea,
   // deja de anunciar y la música de Spotify en la página se detiene.
   let wakeLock = null;
   let musicOn = false;
   async function keepAwake() {
-    try { if ((voice.isOn() || musicOn) && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    try { if ((judge || voice.isOn() || musicOn) && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
   }
   document.addEventListener('visibilitychange', keepAwake);
   $('voiceBtn').addEventListener('click', keepAwake);
@@ -189,7 +215,7 @@
   $('mSpotify').onclick = () => { DC.spotify.play(); keepAwake(); };
   $('vsSpotify').onclick = () => DC.spotify.login();
   $('mSpotifyOut').onclick = () => { DC.spotify.logout(); DC.toast('Spotify desconectado de este celular'); };
-  $('vsSkip').onclick = () => $('voiceStart').classList.add('hidden');
+  $('vsSkip').onclick = () => { $('voiceStart').classList.add('hidden'); keepAwake(); };
   // La voz es grabada (igual en todos los celulares); el selector solo aplica a la voz de respaldo.
   $('mVoicePick').classList.add('hidden');
   $('mVoicePick').onclick = () => DC.voicePicker(state);
@@ -229,6 +255,7 @@
       $('name' + t).textContent = s.teams[t].name;
       $('score' + t).textContent = shownPoints(t);
       $('sets' + t).textContent = s.sets[t];
+      $('serve' + t).textContent = s.hasServeOrder && s.serve === t && s.phase === 'playing' ? `🏐 Saca${s.serveNumber !== null ? ' ' + s.serveNumber : ''}` : '';
     }
     const mine = DC.team === null ? '' : ` · control ${s.teams[DC.team].name}`;
     const waiting = s.nextIn !== null ? ` · espera ${s.allTeams[s.nextIn].name}` : '';
@@ -236,6 +263,8 @@
     if (!$('rank').classList.contains('hidden')) renderRank();
     $('undo').disabled = !s.canUndo;
     $('mUndo').disabled = !s.canUndo;
+    $('jUndo').disabled = !s.canUndo;
+    $('mSwapServe').classList.toggle('hidden', !(s.hasServeOrder && s.phase === 'playing' && s.points.every(p => p === 0)));
     $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
     $('target').value = s.config.pointsPerSet;
     $('target').disabled = s.points.some(v => v !== 0);
@@ -337,6 +366,14 @@
     if (!state || !online) { flash(t, 'error', '✕'); DC.toast('Sin conexión con el servidor', 'bad'); return; }
     if (state.phase !== 'playing') { flash(t, 'error', '✕'); return; }
     if (Date.now() < cooldownUntil) return; // toques residuales justo después de cambiar de set
+    if (judge) {
+      if (Date.now() < judgeGuardUntil) return;
+      judgeGuardUntil = Date.now() + JUDGE_GUARD_MS;
+      optimistic[t] = { delta: 1, version: state.version };
+      paintScore(t);
+      sendPoint(t, 1, state.currentSet);
+      return;
+    }
     const p = pending[t];
     if (p) {
       // Segundo toque dentro de la ventana: es una resta. El +1 nunca se envió.
@@ -404,7 +441,9 @@
   });
   $('menuBtn').onclick = () => $('menu').classList.remove('hidden');
   $('mClose').onclick = closeMenu;
+  $('jUndo').onclick = undo;
   $('mUndo').onclick = () => { undo(); closeMenu(); };
+  $('mSwapServe').onclick = () => { run({ type: 'swapServe' }); closeMenu(); };
   $('mResetSet').onclick = () => { if (confirm('¿Poner en 0 los puntos del set actual?')) { run({ type: 'resetSet' }, 'Set reiniciado'); closeMenu(); } };
   $('mResetMatch').onclick = () => { resetMatch(); closeMenu(); };
   $('target').onchange = e => run({ type: 'target', target: Number(e.target.value) }, 'Puntos por set actualizados');

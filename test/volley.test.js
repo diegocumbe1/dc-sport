@@ -328,3 +328,120 @@ test('alargue: valor inválido rechazado; salas viejas toman el predeterminado',
   assert.equal(old.config.overtime, 99);
   assert.equal(old.voice.lang, 'es-CO', 'la voz siempre en español');
 });
+
+// ---------- Orden de saque ----------
+const withOrder = (first = 0, orders = [[5, 8, 21, 0, 10], [1, 0, 34, 10, 6]]) => {
+  const g = makeGame();
+  assert.equal(apply(g, { type: 'setServeOrder', orders, first }, { admin: true }).ok, true);
+  return g;
+};
+const saca = g => { const s = publicState('x', g); return [s.serve, s.serveNumber]; };
+
+test('orden de saque: el número solo avanza cuando el equipo recupera el saque', () => {
+  const g = withOrder();
+  assert.deepEqual(saca(g), [0, 5], 'empieza el primero del equipo que saca');
+  pt(g, 0);
+  assert.deepEqual(saca(g), [0, 5], 'si gana quien saca, sigue el mismo');
+  pt(g, 1);
+  assert.deepEqual(saca(g), [1, 1], 'el que recibía empieza por el primero de su lista');
+  pt(g, 1);
+  assert.deepEqual(saca(g), [1, 1]);
+  pt(g, 0);
+  assert.deepEqual(saca(g), [0, 8], 'al recuperar el saque pasa al siguiente');
+  pt(g, 1);
+  assert.deepEqual(saca(g), [1, 0], 'la camiseta 0 es válida');
+});
+
+test('orden de saque: la lista vuelve a empezar al terminar', () => {
+  const g = withOrder(0, [[5, 8], [1, 2]]);
+  const seen = [];
+  for (let i = 0; i < 6; i++) { pt(g, i % 2 === 0 ? 1 : 0); seen.push(saca(g)[1]); }
+  assert.deepEqual(seen, [1, 8, 2, 5, 1, 8]);
+});
+
+test('orden de saque: deshacer y restar corrigen quién saca', () => {
+  const g = withOrder();
+  pt(g, 1);
+  assert.deepEqual(saca(g), [1, 1]);
+  apply(g, { type: 'undo' });
+  assert.deepEqual(saca(g), [0, 5], 'deshacer');
+  pt(g, 1);
+  pt(g, 1, -1);
+  assert.deepEqual(saca(g), [0, 5], 'restar el último punto');
+  pt(g, 0);
+  pt(g, 1);
+  pt(g, 0, -1);
+  assert.deepEqual(saca(g), [1, 1], 'restar a otro equipo no cambia el saque');
+});
+
+test('orden de saque: cada set reinicia la lista y alterna quién saca primero', () => {
+  const g = withOrder();
+  g.config.pointsPerSet = 10;
+  score(g, 10, 0);
+  apply(g, { type: 'nextSet' });
+  assert.deepEqual(g.court, [1, 0], 'cambian de lado');
+  assert.deepEqual(saca(g), [0, 1], 'saca primero el equipo que recibió, ahora a la izquierda');
+  score(g, 10, 0);
+  apply(g, { type: 'nextSet' });
+  assert.deepEqual(saca(g), [0, 5], 'tercer set: los equipos vuelven a su lado y saca el primero');
+});
+
+test('orden de saque: se elige quién saca primero y se puede cambiar en 0-0', () => {
+  const g = withOrder(1);
+  assert.deepEqual(saca(g), [1, 1]);
+  assert.equal(apply(g, { type: 'swapServe' }).ok, true);
+  assert.deepEqual(saca(g), [0, 5]);
+  pt(g, 0);
+  assert.equal(apply(g, { type: 'swapServe' }).ok, false, 'no con puntos');
+  apply(g, { type: 'undo' });
+  apply(g, { type: 'undo' });
+  assert.deepEqual(saca(g), [1, 1], 'deshacer revierte el cambio');
+});
+
+test('orden de saque: opcional y por equipo', () => {
+  const none = makeGame();
+  assert.equal(publicState('x', none).hasServeOrder, false);
+  assert.equal(none.serve, null);
+  assert.equal(apply(none, { type: 'swapServe' }).ok, false);
+  const one = withOrder(0, [[], [7]]);
+  assert.deepEqual(saca(one), [0, null], 'equipo sin lista: se sabe el lado, sin número');
+  pt(one, 1);
+  assert.deepEqual(saca(one), [1, 7]);
+});
+
+test('orden de saque: reinicios y corrección de marcador', () => {
+  const g = withOrder(1);
+  pt(g, 0); pt(g, 1);
+  apply(g, { type: 'resetSet' });
+  assert.deepEqual(saca(g), [1, 1], 'reiniciar set');
+  pt(g, 0);
+  apply(g, { type: 'resetMatch' });
+  assert.deepEqual(saca(g), [1, 1], 'reiniciar partido conserva lista y equipo que saca primero');
+  pt(g, 0);
+  apply(g, { type: 'setScore', points: [3, 2], teamSets: [0, 0] }, { admin: true });
+  assert.deepEqual(saca(g), [0, 5], 'corregir el marcador no borra quién saca');
+});
+
+test('orden de saque: validaciones y permisos', () => {
+  const g = makeGame();
+  const set = (orders, first, opts = { admin: true }) => apply(g, { type: 'setServeOrder', orders, first }, opts).ok;
+  assert.equal(set([[1]], 0, {}), false, 'requiere PIN');
+  assert.equal(set([[100]], 0), false);
+  assert.equal(set([[-1]], 0), false);
+  assert.equal(set([[1.5]], 0), false);
+  assert.equal(set(['5 8'], 0), false);
+  assert.equal(set([Array(13).fill(1)], 0), false);
+  assert.equal(set([[1], [2], [3]], 0), false, 'más listas que equipos');
+  assert.equal(set([[1]], 2), false);
+  pt(g, 0);
+  assert.equal(set([[1]], 0), false, 'solo antes de iniciar');
+});
+
+test('orden de saque: se conserva al guardar y cargar, y al renombrar equipos', () => {
+  const g = withOrder();
+  pt(g, 1);
+  const loaded = hydrate(JSON.parse(JSON.stringify(g)));
+  assert.deepEqual(saca(loaded), [1, 1]);
+  apply(loaded, { type: 'setTeams', teams: [{ name: 'Leones' }, { name: 'Tigres' }] }, { admin: true });
+  assert.deepEqual(loaded.teams[0].serveOrder, [5, 8, 21, 0, 10]);
+});

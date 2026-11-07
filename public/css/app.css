@@ -128,6 +128,8 @@ body.controller {
 .pad .hint { font-size: clamp(11px, 3vh, 15px); font-size: clamp(11px, min(3.5cqh, 3cqw), 18px); opacity: .7; margin-top: 2px; }
 /* Pantallas bajas (celular horizontal): la ayuda se oculta para dar espacio al número. */
 @media (max-height: 520px) { .pad .hint { display: none; } }
+.pad .serve { font-size: clamp(14px, 4vh, 22px); font-size: clamp(14px, min(9cqh, 9cqw), 64px); font-weight: 900; background: rgba(0,0,0,.4); border-radius: 999px; padding: .1em .7em; margin-bottom: .2em; white-space: nowrap; }
+.pad .serve:empty { display: none; }
 .pad .fx { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: clamp(60px, 30vh, 160px); font-size: clamp(60px, min(50cqh, 45cqw), 400px); font-weight: 900; pointer-events: none; opacity: 0; }
 .pad.pending { filter: brightness(1.25); }
 .pad.pending .fx { opacity: .35; }
@@ -148,6 +150,13 @@ body.locked .pad { filter: grayscale(.7) brightness(.6); }
   .rotate-hint { display: block; text-align: center; font-size: 13px; color: var(--warn); padding: 4px; background: var(--panel); }
   .ctl { grid-template-rows: auto auto 1fr; }
 }
+/* Modo juez: botones grandes abajo, al alcance del pulgar; sirve vertical u horizontal. */
+body.judge .rotate-hint { display: none; }
+body.judge .ctl { grid-template-rows: auto 1fr auto; }
+.ctl-pads.swapped .pad[data-team="0"] { order: 1; }
+.judge-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 6px 6px; }
+.judge-bar button { min-height: 56px; font-size: 17px; }
+.judge-bar button:disabled { opacity: .45; }
 
 /* ---------- Admin ---------- */
 .admin { max-width: 900px; margin: 0 auto; padding: 20px 16px 60px; }

@@ -33,6 +33,8 @@ const VOICE_GAIN_MAX = 2.5;
 const MAX_UNDO = 200;
 const MAX_LOG = 100;
 const MAX_NAME = 20;
+const MAX_SERVE_ORDER = 12; // jugadores en el orden de saque de un equipo
+const MAX_JERSEY = 99;
 const PALETTE = OPTIONS.teamColors; // [{ value: '#hex', label: 'AZUL' }]
 const DEFAULT_CONFIG = {
   pointsPerSet: OPTIONS.pointsPerSet.default,
@@ -50,9 +52,31 @@ const defaultTeam = i => ({ name: PALETTE[i % PALETTE.length].label, color: PALE
 const colorName = hex => (PALETTE.find(c => c.value.toLowerCase() === String(hex).toLowerCase()) || {}).label;
 const fallbackName = (color, i) => colorName(color) || `EQUIPO ${i + 1}`;
 
+// Orden de saque (opcional): teams[i].serveOrder = números de camiseta, en orden.
+const hasServeOrder = g => g.teams.some(t => t.serveOrder && t.serveOrder.length);
+// Empieza un set con `team` sacando. serveTurn = cuántas veces ha tenido el saque cada equipo en
+// el set, así que el equipo que recibe empieza por el primero de su lista al recuperar el saque.
+// Sin orden de saque, `serve` sigue en null hasta el primer punto.
+function beginServe(g, team) {
+  g.serveTurn = g.teams.map(() => 0);
+  g.serveTurn[team] = 1;
+  g.setServer = team;
+  g.lastRally = null;
+  const side = g.court.indexOf(team);
+  g.serve = hasServeOrder(g) ? Math.max(side, 0) : null;
+}
+// Número de camiseta de quien saca; null si no se sabe o su equipo no tiene orden.
+function serverNumber(g) {
+  if (g.serve === null) return null;
+  const team = g.court[g.serve];
+  const order = g.teams[team] && g.teams[team].serveOrder;
+  if (!order || !order.length) return null;
+  return order[(Math.max(g.serveTurn[team] || 0, 1) - 1) % order.length];
+}
+
 function makeGame(prev) {
   const teams = prev ? prev.teams.map(t => ({ ...t })) : [defaultTeam(0), defaultTeam(1)];
-  return {
+  const g = {
     teams,
     config: prev ? { ...prev.config } : { ...DEFAULT_CONFIG },
     voice: prev ? { ...prev.voice } : { ...DEFAULT_VOICE },
@@ -71,7 +95,13 @@ function makeGame(prev) {
     log: prev ? prev.log.slice(-MAX_LOG) : [],
     version: prev ? prev.version : 0,
     updatedAt: Date.now(),
+    firstServer: prev && prev.firstServer ? 1 : 0, // equipo que saca primero en el partido (0 o 1)
+    setServer: 0, // equipo que sacó primero en el set actual
+    serveTurn: [],
+    lastRally: null, // cómo estaba el saque antes del último punto (para corregir con −1)
   };
+  beginServe(g, g.firstServer);
+  return g;
 }
 
 const rotationMode = g => g.teams.length > 2; // 3+ equipos: hay cola y rotación
@@ -87,7 +117,7 @@ const maxPoints = g => (g.config.overtime >= OVERTIME_UNLIMITED ? null : targetP
 
 // Campos que se guardan en cada instantánea para poder deshacer
 // (la voz no: es un ajuste del marcador, no parte del partido).
-const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'serve', 'setWinner', 'matchWinner', 'setResults'];
+const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'serve', 'setWinner', 'matchWinner', 'setResults', 'setServer', 'serveTurn', 'lastRally'];
 function snapshot(g) {
   return JSON.parse(JSON.stringify(Object.fromEntries(SNAP_KEYS.map(k => [k, g[k]]))));
 }
@@ -167,7 +197,19 @@ function apply(g, cmd, { admin = false } = {}) {
       pushUndo(g, `${delta > 0 ? '+1' : '−1'} ${sideName(side)}`);
       g.points[side] += delta;
       // Quien gana el rally pasa a sacar. Una resta (corrección) no cambia el saque; deshacer sí lo revierte.
-      if (delta > 0) g.serve = side;
+      if (delta > 0) {
+        if (hasServeOrder(g)) {
+          g.lastRally = { side, serve: g.serve, serveTurn: [...g.serveTurn] };
+          // Solo cambia quien saca cuando el equipo recupera el saque.
+          if (g.serve !== side) g.serveTurn[g.court[side]] = (g.serveTurn[g.court[side]] || 0) + 1;
+        }
+        g.serve = side;
+      } else if (g.lastRally && g.lastRally.side === side) {
+        // Con orden de saque, restar el último punto también corrige quién saca.
+        g.serve = g.lastRally.serve;
+        g.serveTurn = g.lastRally.serveTurn;
+        g.lastRally = null;
+      }
       addLog(g, `${delta > 0 ? '+1' : '−1'} ${sideName(side)} (${g.points[0]}-${g.points[1]})`, by);
       evaluateSet(g);
       if (g.phase === 'setOver') addLog(g, `Set ${g.currentSet} para ${sideName(g.setWinner)}`, 'sistema');
@@ -191,7 +233,9 @@ function apply(g, cmd, { admin = false } = {}) {
       if (!change) g.court = [g.court[1], g.court[0]];
       g.currentSet++;
       g.points = [0, 0];
-      g.serve = null; // el primer saque del set se define con el primer punto
+      // Sin orden de saque, el primero se define con el primer punto. Con orden: entra el equipo
+      // nuevo sacando o, si siguen los mismos, saca primero el que recibió en el set anterior.
+      beginServe(g, change ? change.inn : g.court.find(i => i !== g.setServer));
       g.phase = 'playing';
       g.setWinner = null;
       addLog(g, `Comienza el set ${g.currentSet}${change ? `: entra ${name(change.inn)}, sale ${name(change.out)}` : ': cambio de lado'}`, by);
@@ -202,7 +246,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (g.points[0] === 0 && g.points[1] === 0) return fail('El set ya está en 0-0');
       pushUndo(g, `Reinicio set ${g.currentSet}`);
       g.points = [0, 0];
-      g.serve = null;
+      beginServe(g, g.setServer);
       addLog(g, `Puntos del set ${g.currentSet} reiniciados`, by);
       break;
     }
@@ -213,6 +257,14 @@ function apply(g, cmd, { admin = false } = {}) {
       Object.assign(g, makeGame(g));
       g.undo = keepUndo;
       addLog(g, 'Partido reiniciado', by);
+      break;
+    }
+    case 'swapServe': {
+      if (!hasServeOrder(g)) return fail('Este partido no tiene orden de saque');
+      if (g.phase !== 'playing' || g.points.some(p => p !== 0)) return fail('Solo con el set en 0-0');
+      pushUndo(g, 'Cambio de quién saca');
+      beginServe(g, g.court.find(i => i !== g.setServer));
+      addLog(g, `Saca primero ${name(g.setServer)}`, by);
       break;
     }
     case 'target': {
@@ -235,7 +287,9 @@ function apply(g, cmd, { admin = false } = {}) {
       g.teams = list.map((t, i) => {
         const base = g.teams[i] || defaultTeam(i);
         const color = cleanColor(t && t.color, base.color);
-        return { name: cleanName(t && t.name, fallbackName(color, i)).toUpperCase(), color };
+        const team = { name: cleanName(t && t.name, fallbackName(color, i)).toUpperCase(), color };
+        if (base.serveOrder) team.serveOrder = base.serveOrder;
+        return team;
       });
       g.teamSets = g.teams.map((_, i) => g.teamSets[i] || 0);
       // Si sobran o faltan equipos, se reordena la cancha y la cola sin perder el orden existente.
@@ -256,6 +310,24 @@ function apply(g, cmd, { admin = false } = {}) {
       addLog(g, `Equipos: ${g.teams.map(t => t.name).join(', ')}`, by);
       break;
     }
+    case 'setServeOrder': {
+      if (!admin) return fail('Requiere PIN de administración');
+      if (!isPristine(g)) return fail('El orden de saque se define antes de iniciar el partido');
+      const orders = cmd.orders === undefined ? [] : cmd.orders;
+      const first = cmd.first === undefined ? 0 : cmd.first;
+      if (!Array.isArray(orders) || orders.length > g.teams.length) return fail('Orden de saque inválido');
+      const valid = o => Array.isArray(o) && o.length <= MAX_SERVE_ORDER && o.every(n => nonNegInt(n, MAX_JERSEY));
+      if (!orders.every(valid)) return fail(`Orden de saque: hasta ${MAX_SERVE_ORDER} números de 0 a ${MAX_JERSEY}`);
+      if (!isSide(first)) return fail('Equipo que saca primero inválido');
+      g.teams.forEach((t, i) => {
+        if (orders[i] && orders[i].length) t.serveOrder = [...orders[i]];
+        else delete t.serveOrder;
+      });
+      g.firstServer = first;
+      beginServe(g, first);
+      if (hasServeOrder(g)) addLog(g, `Orden de saque: ${g.teams.filter(t => t.serveOrder).map(t => `${t.name} ${t.serveOrder.join('-')}`).join(' · ')}`, by);
+      break;
+    }
     case 'setCourt': {
       if (!admin) return fail('Requiere PIN de administración');
       const c = cmd.court;
@@ -263,7 +335,7 @@ function apply(g, cmd, { admin = false } = {}) {
       if (g.phase !== 'playing' || g.points.some(p => p !== 0)) return fail('Solo con el set en 0-0');
       pushUndo(g, 'Cambio de equipos en cancha');
       g.court = [...c];
-      g.serve = null;
+      beginServe(g, c.includes(g.setServer) ? g.setServer : c[0]);
       g.queue = [...g.queue.filter(i => !c.includes(i)), ...g.teams.map((_, i) => i).filter(i => !c.includes(i) && !g.queue.includes(i))];
       addLog(g, `En cancha: ${name(c[0])} vs ${name(c[1])}`, by);
       break;
@@ -342,7 +414,8 @@ function apply(g, cmd, { admin = false } = {}) {
       if (!openMatch(g) && teamSets.filter(s => s >= setsToWin(g)).length > 1) return fail('Ambos equipos no pueden ganar el partido');
       pushUndo(g, 'Corrección de marcador');
       g.points = [...points];
-      g.serve = null;
+      if (!hasServeOrder(g)) g.serve = null;
+      g.lastRally = null;
       g.teamSets = [...teamSets];
       g.currentSet = teamSets.reduce((a, b) => a + b, 0) + 1;
       g.setResults = g.setResults.filter(r => r.set < g.currentSet);
@@ -394,6 +467,8 @@ function publicState(room, g) {
     voice: g.voice,
     points: g.points,
     serve: g.serve,
+    hasServeOrder: hasServeOrder(g),
+    serveNumber: serverNumber(g),
     currentSet: g.currentSet,
     target: targetPoints(g),
     maxPoints: maxPoints(g),

@@ -53,7 +53,8 @@
       const team = $('team' + t);
       team.style.setProperty('--c', s.teams[t].color);
       // 🏐 = equipo con el saque (ganó el último punto).
-      $('name' + t).textContent = (s.serve === t && s.phase === 'playing' ? '🏐 ' : '') + s.teams[t].name;
+      const serving = s.serve === t && s.phase === 'playing';
+      $('name' + t).textContent = (serving ? `🏐 ${s.serveNumber !== null ? s.serveNumber + ' · ' : ''}` : '') + s.teams[t].name;
       if (last && last.points[t] !== s.points[t]) {
         team.classList.remove('bump'); void team.offsetWidth; team.classList.add('bump');
       }
