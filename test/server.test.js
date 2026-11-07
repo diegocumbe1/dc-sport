@@ -151,6 +151,48 @@ test('crear tablero: solo es sala de torneo si se pide', async () => {
   assert.equal((await setup('torneo1', { teams: [{}, {}], torneo: true })).state.torneo, true);
 });
 
+test('borrar una sala: las de torneo avisan el cierre y no quedan en blanco', async () => {
+  const borrar = room => fetch(`${BASE}/api/rooms/${room}`, { method: 'DELETE', headers: { 'x-admin-pin': '4321' } });
+
+  await setup('cierre1', { teams: [{}, {}], torneo: true });
+  const juez = await client('cierre1', 'control');
+  const aviso = new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('No llegó el aviso de cierre')), 3000);
+    juez.once('room-closed', () => { clearTimeout(t); resolve(); });
+  });
+  assert.equal((await borrar('cierre1')).status, 200);
+  await aviso;
+  assert.equal((await fetch(`${BASE}/api/rooms/cierre1`)).status, 404, 'no se recrea en blanco');
+
+  await setup('cierre2', { teams: [{}, {}] });
+  const normal = await client('cierre2', 'control');
+  let cerrada = false;
+  normal.once('room-closed', () => { cerrada = true; });
+  await borrar('cierre2');
+  assert.equal((await fetch(`${BASE}/api/rooms/cierre2`)).status, 200, 'la recreativa sigue en blanco');
+  assert.equal(cerrada, false);
+});
+
+test('sala de partido de torneo: un enlace viejo no la crea, /setup sí', async () => {
+  const sala = 't-0123456789ab';
+  const viejo = await client(sala, 'control');
+  assert.equal(viejo.joinRes.closed, true);
+  assert.equal((await fetch(`${BASE}/api/rooms/${sala}`)).status, 404);
+
+  assert.equal((await setup(sala, { teams: [{ name: 'A' }, { name: 'B' }], torneo: true })).ok, true);
+  const juez = await client(sala, 'control');
+  assert.equal(juez.joinRes.ok, true);
+  assert.equal((await cmd(juez, { type: 'point', team: 0, delta: 1, id: 'cerrada1' })).ok, true);
+
+  await fetch(`${BASE}/api/rooms/${sala}`, { method: 'DELETE', headers: { 'x-admin-pin': '4321' } });
+  const tarde = await cmd(juez, { type: 'point', team: 0, delta: 1, id: 'cerrada2' });
+  assert.equal(tarde.closed, true);
+  assert.equal((await fetch(`${BASE}/api/rooms/${sala}`)).status, 404, 'un toque tardío no la revive');
+
+  // Otros códigos siguen creando sala al abrirlos, como siempre.
+  assert.equal((await client('t-recreativa', 'control')).joinRes.ok, true);
+});
+
 test('crear tablero desde el inicio con N equipos', async () => {
   const r = await setup('torneo', { teams: [{ name: 'Leones' }, { name: '' }, { name: 'Tigres', color: '#00aa00' }], pointsPerSet: 15, rotation: 'winnerStays' });
   assert.equal(r.ok, true);

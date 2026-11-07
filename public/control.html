@@ -283,6 +283,7 @@
     // En un torneo las reglas y el resultado no se cambian desde aquí.
     $('target').closest('label').classList.toggle('hidden', !!s.torneo);
     $('mResetMatch').classList.toggle('hidden', !!s.torneo);
+    $('homeBtn').classList.toggle('hidden', !!s.torneo);
     document.body.classList.toggle('locked', s.phase !== 'playing');
 
     const ov = $('setOver');
@@ -291,7 +292,7 @@
     if (s.phase === 'finished') {
       $('soTitle').textContent = DC.finalTitle(s);
       $('soText').textContent = s.torneo ? 'El organizador confirmará el resultado en el torneo.' : '';
-      $('soButtons').innerHTML = `<button class="alt" data-act="undo">↶ Reanudar partido</button>${s.torneo ? '' : '<button class="danger" data-act="reset">Nuevo partido</button>'}<button class="alt" data-act="home">⌂ Inicio</button>`;
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">↶ Reanudar partido</button>${s.torneo ? '<button class="ok" data-act="exit">✓ Listo, salir</button>' : '<button class="danger" data-act="reset">Nuevo partido</button><button class="alt" data-act="home">⌂ Inicio</button>'}`;
       ov.classList.remove('hidden');
       return;
     }
@@ -315,7 +316,7 @@
     } else {
       $('soTitle').textContent = `¡${s.teams[s.matchWinner].name} gana el partido!`;
       $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}${s.torneo ? '. El organizador confirmará el resultado en el torneo.' : ''}`;
-      $('soButtons').innerHTML = `<button class="alt" data-act="undo">Deshacer último punto</button>${s.torneo ? '' : '<button class="danger" data-act="reset">Nuevo partido</button>'}`;
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">Deshacer último punto</button>${s.torneo ? '<button class="ok" data-act="exit">✓ Listo, salir</button>' : '<button class="danger" data-act="reset">Nuevo partido</button>'}`;
     }
     ov.classList.remove('hidden');
   }
@@ -464,6 +465,7 @@
     } else if (act === 'undo') undo();
     else if (act === 'reset') resetMatch();
     else if (act === 'end') endMatch();
+    else if (act === 'exit') DC.closeView('Listo', 'El organizador confirmará el resultado en el torneo. Ya puedes cerrar esta ventana. Si hay que corregir algo, vuelve a abrir tu enlace.');
     else if (act === 'home') location.href = $('homeBtn').href;
   });
   $('menuBtn').onclick = () => $('menu').classList.remove('hidden');

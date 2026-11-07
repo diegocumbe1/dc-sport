@@ -40,6 +40,9 @@ store.bind(() => ({ savedAt: Date.now(), rooms: Object.fromEntries(games) }));
 
 const normRoom = room => (typeof room === 'string' ? room.trim().toLowerCase() : '');
 const validRoom = room => /^[a-z0-9_-]{3,24}$/.test(room);
+// Código que genera un torneo para cada partido. Estas salas solo nacen con /setup: si no
+// existe, ese partido ya se cerró, y abrir su enlace viejo no debe crear una sala en blanco.
+const closedMatchRoom = room => /^t-[0-9a-f]{12}$/.test(room) && !games.has(room);
 function getGame(room, create = true) {
   if (!games.has(room) && create) {
     if (games.size >= MAX_ROOMS) return null;
@@ -97,6 +100,12 @@ function deleteRoom(room) {
   const old = games.get(room);
   games.delete(room);
   seen.delete(room);
+  // Sala de torneo: el partido terminó, así que sus pantallas se cierran en vez de quedar en blanco.
+  if (old && old.torneo) {
+    io.to(room).emit('room-closed');
+    io.in(room).socketsLeave(room);
+    return;
+  }
   if (io.sockets.adapter.rooms.get(room)?.size) {
     const fresh = volley.makeGame();
     fresh.version = (old ? old.version : 0) + 1; // los clientes descartan versiones menores
@@ -137,6 +146,7 @@ io.on('connection', socket => {
       socket.emit('error-msg', 'Código de sala inválido');
       return reply(ack, { ok: false, error: 'Código de sala inválido' });
     }
+    if (closedMatchRoom(room)) return reply(ack, { ok: false, closed: true, error: 'Este partido ya no está abierto' });
     const seat = seatError(room, role, team, socket.id);
     if (seat) return reply(ack, { ok: false, full: true, error: seat });
     if (!getGame(room)) return reply(ack, { ok: false, error: 'Límite de salas alcanzado' });
@@ -203,6 +213,7 @@ io.on('connection', socket => {
   socket.on('command', (cmd, ack) => {
     const room = socket.data.room;
     if (!room) return reply(ack, { ok: false, error: 'No estás en una sala' });
+    if (closedMatchRoom(room)) return reply(ack, { ok: false, closed: true, error: 'Este partido ya no está abierto' });
     if (!cmd || typeof cmd !== 'object') return reply(ack, { ok: false, error: 'Comando inválido' });
     if (socket.data.role === 'marcador') return reply(ack, { ok: false, error: 'El marcador es solo de lectura' });
     if (cmd.type === 'point' && socket.data.team !== null && socket.data.team !== undefined && cmd.team !== socket.data.team) {

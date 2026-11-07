@@ -45,6 +45,17 @@
 
   // Conecta a la sala. El servidor es la fuente de verdad: cada cambio llega como 'state'.
   // role: 'marcador' | 'control' | 'admin'; team: 0 | 1 | null (control de un solo equipo).
+  // Pantalla final: suelta la conexión (y su lugar en la sala), apaga la voz y deja solo un
+  // mensaje. Los navegadores solo cierran pestañas abiertas por código; si no, queda el mensaje.
+  let activeSocket = null;
+  function closeView(title, text) {
+    if (activeSocket) activeSocket.disconnect();
+    stopSpeaking();
+    document.body.classList.remove('locked');
+    document.body.innerHTML = `<div class="overlay"><div class="box"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p></div></div>`;
+    window.close();
+  }
+
   function connect({ role, team = null, onState, onConnection, onPresence } = {}) {
     const socket = io({
       // WebSocket primero: evita la página de aviso de ngrok en el long-polling.
@@ -52,13 +63,23 @@
       tryAllTransports: true,
       extraHeaders: { 'ngrok-skip-browser-warning': '1' },
     });
+    activeSocket = socket;
     let version = -1;
     let joined = false;
+    // El organizador confirmó el resultado y la sala del torneo se borró.
+    socket.on('room-closed', () => {
+      if (role === 'admin') return location.reload();
+      closeView('Resultado confirmado', 'El organizador ya confirmó el resultado en el torneo. Ya puedes cerrar esta ventana.');
+    });
 
     let retry = null;
     function join() {
       clearTimeout(retry);
       socket.emit('join', { room, role, team }, res => {
+        if (res && res.closed) {
+          closeView('Este partido ya no está abierto', 'El marcador de este partido ya se cerró. Si necesitas marcar otro partido, pídele al organizador su enlace.');
+          return;
+        }
         joined = !!(res && res.ok);
         onConnection && onConnection(joined ? 'online' : res && res.full ? 'full' : 'error', res && res.error);
         // Sala llena: reintentar cada 5 s por si se libera un lugar.
@@ -824,5 +845,5 @@
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
   options().then(o => { palette = o.teamColors || []; }).catch(() => {});
 
-  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
+  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, closeView, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
 })();
