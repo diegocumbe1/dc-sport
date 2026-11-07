@@ -85,7 +85,7 @@ function makeGame(prev) {
     points: [0, 0],
     teamSets: teams.map(() => 0),
     currentSet: 1,
-    // playing | setOver (esperando confirmación del siguiente set) | matchOver
+    // playing | setOver (esperando confirmación del siguiente set) | matchOver | finished (lo cerró el usuario)
     phase: 'playing',
     serve: null, // lado con el saque: quien ganó el último punto (rally point)
     setWinner: null, // lado ganador del set
@@ -98,6 +98,7 @@ function makeGame(prev) {
     firstServer: prev && prev.firstServer ? 1 : 0, // equipo que saca primero en el partido (0 o 1)
     setServer: 0, // equipo que sacó primero en el set actual
     serveTurn: [],
+    openSet: null, // set sin terminar al finalizar el partido (no cuenta): { set, teams, points }
     lastRally: null, // cómo estaba el saque antes del último punto (para corregir con −1)
   };
   beginServe(g, g.firstServer);
@@ -117,7 +118,7 @@ const maxPoints = g => (g.config.overtime >= OVERTIME_UNLIMITED ? null : targetP
 
 // Campos que se guardan en cada instantánea para poder deshacer
 // (la voz no: es un ajuste del marcador, no parte del partido).
-const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'serve', 'setWinner', 'matchWinner', 'setResults', 'setServer', 'serveTurn', 'lastRally'];
+const SNAP_KEYS = ['teams', 'config', 'court', 'queue', 'points', 'teamSets', 'currentSet', 'phase', 'serve', 'setWinner', 'matchWinner', 'setResults', 'setServer', 'serveTurn', 'lastRally', 'openSet'];
 function snapshot(g) {
   return JSON.parse(JSON.stringify(Object.fromEntries(SNAP_KEYS.map(k => [k, g[k]]))));
 }
@@ -192,7 +193,7 @@ function apply(g, cmd, { admin = false } = {}) {
       const { team: side, delta } = cmd;
       if (!isSide(side) || (delta !== 1 && delta !== -1)) return fail('Punto inválido');
       if (g.phase === 'setOver') return fail('Set terminado: confirma el siguiente set o deshaz');
-      if (g.phase === 'matchOver') return fail('Partido terminado');
+      if (g.phase === 'matchOver' || g.phase === 'finished') return fail('Partido terminado');
       if (delta === -1 && g.points[side] === 0) return fail('El puntaje no puede ser negativo');
       pushUndo(g, `${delta > 0 ? '+1' : '−1'} ${sideName(side)}`);
       g.points[side] += delta;
@@ -257,6 +258,16 @@ function apply(g, cmd, { admin = false } = {}) {
       Object.assign(g, makeGame(g));
       g.undo = keepUndo;
       addLog(g, 'Partido reiniciado', by);
+      break;
+    }
+    case 'endMatch': {
+      if (g.phase !== 'playing' && g.phase !== 'setOver') return fail('El partido ya terminó');
+      const partial = g.phase === 'playing' && g.points.some(p => p > 0);
+      if (!partial && !g.teamSets.some(s => s > 0)) return fail('Todavía no se ha jugado ningún punto');
+      pushUndo(g, 'Fin del partido');
+      g.openSet = partial ? { set: g.currentSet, teams: [...g.court], points: [...g.points] } : null;
+      g.phase = 'finished';
+      addLog(g, 'Partido finalizado', by);
       break;
     }
     case 'swapServe': {
@@ -421,6 +432,7 @@ function apply(g, cmd, { admin = false } = {}) {
       g.setResults = g.setResults.filter(r => r.set < g.currentSet);
       g.setWinner = null;
       g.matchWinner = null;
+      g.openSet = null;
       g.phase = 'playing';
       const won = openMatch(g) ? -1 : g.court.findIndex(i => g.teamSets[i] >= setsToWin(g));
       if (won !== -1) {
@@ -478,6 +490,7 @@ function publicState(room, g) {
     setWinner: g.setWinner,
     matchWinner: g.matchWinner,
     setResults: g.setResults,
+    openSet: g.openSet,
     canUndo: g.undo.length > 0,
     lastUndo: g.undo.length ? g.undo[g.undo.length - 1].label : null,
     log: g.log.slice(-30),

@@ -249,7 +249,8 @@
     if (!s || !authed) return;
     const [A, B] = s.teams;
     const phase = s.phase === 'setOver' ? ` · Set para ${s.teams[s.setWinner].name}, esperando confirmación`
-      : s.phase === 'matchOver' ? ` · Partido para ${s.teams[s.matchWinner].name}` : '';
+      : s.phase === 'matchOver' ? ` · Partido para ${s.teams[s.matchWinner].name}`
+      : s.phase === 'finished' ? ' · Partido finalizado' : '';
     $('summary').textContent = `${A.name} ${s.points[0]} – ${s.points[1]} ${B.name} · Sets ${s.sets[0]}-${s.sets[1]} · Set ${s.currentSet} a ${s.target}${phase}`;
     $('queueInfo').textContent = s.queue.length
       ? 'En espera: ' + s.queue.map(i => s.allTeams[i].name).join(' → ') + ' · Sets: ' + s.allTeams.map((t, i) => `${t.name} ${s.teamSets[i]}`).join(', ')

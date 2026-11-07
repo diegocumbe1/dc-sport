@@ -445,3 +445,53 @@ test('orden de saque: se conserva al guardar y cargar, y al renombrar equipos', 
   apply(loaded, { type: 'setTeams', teams: [{ name: 'Leones' }, { name: 'Tigres' }] }, { admin: true });
   assert.deepEqual(loaded.teams[0].serveOrder, [5, 8, 21, 0, 10]);
 });
+
+// ---------- Finalizar partido ----------
+test('finalizar: cierra el partido y bloquea los puntos', () => {
+  const g = makeGame();
+  g.config.pointsPerSet = 10;
+  assert.equal(apply(g, { type: 'endMatch' }).ok, false, 'sin haber jugado');
+  score(g, 10, 0);
+  assert.equal(g.phase, 'setOver');
+  assert.equal(apply(g, { type: 'endMatch' }).ok, true);
+  assert.equal(g.phase, 'finished');
+  assert.equal(g.openSet, null, 'el set cerrado no queda a medias');
+  assert.equal(pt(g, 0).ok, false);
+  assert.equal(apply(g, { type: 'nextSet' }).ok, false);
+  assert.equal(apply(g, { type: 'endMatch' }).ok, false, 'no dos veces');
+});
+
+test('finalizar: un set a medias queda registrado sin contar', () => {
+  const g = makeGame();
+  score(g, 3, 2);
+  apply(g, { type: 'endMatch' });
+  const s = publicState('x', g);
+  assert.deepEqual(s.openSet, { set: 1, teams: [0, 1], points: [3, 2] });
+  assert.deepEqual(s.teamSets, [0, 0]);
+  assert.deepEqual(s.setResults, []);
+});
+
+test('finalizar: se reanuda con deshacer y nuevo partido limpia', () => {
+  const g = makeGame();
+  score(g, 3, 2);
+  apply(g, { type: 'endMatch' });
+  apply(g, { type: 'undo' });
+  assert.equal(g.phase, 'playing');
+  assert.equal(g.openSet, null);
+  assert.deepEqual(g.points, [3, 2]);
+  assert.equal(pt(g, 0).ok, true);
+  apply(g, { type: 'endMatch' });
+  apply(g, { type: 'resetMatch' });
+  assert.equal(g.phase, 'playing');
+  assert.equal(g.openSet, null);
+  assert.deepEqual(g.points, [0, 0]);
+});
+
+test('finalizar: se conserva al guardar y cargar', () => {
+  const g = makeGame();
+  score(g, 3, 2);
+  apply(g, { type: 'endMatch' });
+  const loaded = hydrate(JSON.parse(JSON.stringify(g)));
+  assert.equal(loaded.phase, 'finished');
+  assert.deepEqual(loaded.openSet.points, [3, 2]);
+});

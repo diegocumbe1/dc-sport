@@ -193,6 +193,11 @@
   function scoreSpeech(s) {
     const [A, B] = s.teams.map(t => spoken(t.name));
     const [a, b] = s.points;
+    if (s.phase === 'finished') {
+      const { winner, rows } = finalResult(s);
+      if (!winner) return 'Partido finalizado. Empate en sets.';
+      return `¡${spoken(winner.name)} gana el partido! ${rows.length === 2 ? `Sets, ${winner.won} a ${rows[1].won}.` : `Sets ganados, ${winner.won}.`}`;
+    }
     if (s.phase === 'matchOver') {
       return `¡${spoken(s.teams[s.matchWinner].name)} gana el partido! Sets, ${s.sets[s.matchWinner]} a ${s.sets[1 - s.matchWinner]}.`;
     }
@@ -244,6 +249,36 @@
       r.status = s.court.includes(r.i) ? 'En cancha' : s.queue.includes(r.i) ? `Espera ${s.queue.indexOf(r.i) + 1}` : '';
     });
     return { rows, total: (s.setResults || []).length };
+  }
+  // Tabla de posiciones (panel del control y resultado final).
+  function standingsTable(s, { status = false } = {}) {
+    const medal = p => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[p] || p + '.');
+    return `<table class="rank-table"><thead><tr><th></th><th>Equipo</th><th title="Sets ganados">G</th><th title="Sets perdidos">P</th><th title="Sets jugados">J</th><th title="Puntos a favor">Pts</th><th title="Diferencia de puntos">Dif</th></tr></thead><tbody>
+      ${standings(s).rows.map(r => `<tr><td class="pos">${medal(r.pos)}</td>
+        <td><span class="dot" style="background:${esc(r.color)}"></span>${esc(r.name)}${status && r.status ? ` <small class="muted">${r.status}</small>` : ''}</td>
+        <td><b>${r.won}</b></td><td>${r.lost}</td><td>${r.played}</td><td>${r.pf}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+  // Resultado al finalizar: gana quien tenga más sets; con los mismos sets es empate.
+  function finalResult(s) {
+    const { rows } = standings(s);
+    return { rows, winner: rows[0].won > rows[1].won ? rows[0] : null };
+  }
+  function finalTitle(s) {
+    const { winner } = finalResult(s);
+    return winner ? `🏆 ¡${winner.name} gana el partido!` : 'Partido finalizado · Empate en sets';
+  }
+  // Detalle: marcador de sets y cada set con 2 equipos; tabla de posiciones con 3 o más.
+  function finalHtml(s) {
+    const { rows } = finalResult(s);
+    const name = i => esc((s.allTeams[i] || {}).name || '?');
+    const line = (label, r, note = '') => `<li><span class="muted">${label}</span> ${name(r.teams[0])} <b>${r.points[0]} - ${r.points[1]}</b> ${name(r.teams[1])}${note}</li>`;
+    const sets = (s.setResults || []).filter(r => Array.isArray(r.teams)).map(r => line(`Set ${r.set}`, r));
+    if (s.openSet) sets.push(line(`Set ${s.openSet.set}`, s.openSet, ' <small class="muted">sin terminar, no cuenta</small>'));
+    const top = rows.length === 2
+      ? `<p class="final-sets">${esc(rows[0].name)} <b>${rows[0].won} - ${rows[1].won}</b> ${esc(rows[1].name)}<small class="muted">Sets ganados</small></p>`
+      : `${standingsTable(s)}<p class="muted rank-foot">G ganados · P perdidos · J jugados · Pts a favor · Dif a favor − en contra.</p>`;
+    return top + (sets.length ? `<ul class="final-list">${sets.join('')}</ul>` : '');
   }
 
   // «a 10», «a 10 · sin alargue» o «a 10 · máx. 12», según el alargue configurado.
@@ -361,7 +396,12 @@
     const [a, b] = s.points;
     let parts;
     let lead = '|'; // pausa después del «ding»
-    if (s.phase === 'matchOver') {
+    if (s.phase === 'finished') {
+      const { winner, rows } = finalResult(s);
+      if (!winner) parts = ['partido_finalizado', '|', 'empate_en_sets'];
+      else if (rows.length === 2) parts = [team(winner), 'gana_el_partido', '|', 'sets', n(winner.won), 'a', n(rows[1].won)];
+      else parts = [team(winner), 'gana_el_partido', '|', 'sets_ganados', n(winner.won)];
+    } else if (s.phase === 'matchOver') {
       const w = s.matchWinner;
       parts = [team(s.teams[w]), 'gana_el_partido', '|', 'sets', n(s.sets[w]), 'a', n(s.sets[1 - w])];
     } else if (s.phase === 'setOver') {
@@ -784,5 +824,5 @@
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
   options().then(o => { palette = o.teamColors || []; }).catch(() => {});
 
-  window.DC = { room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
+  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
 })();

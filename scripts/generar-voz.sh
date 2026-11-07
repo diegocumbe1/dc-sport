@@ -55,6 +55,9 @@ clip a "a"
 clip se_prepara "Se prepara"
 clip gana_el_partido "¡gana el partido!"
 clip sets "Sets,"
+clip sets_ganados "Sets ganados,"
+clip partido_finalizado "Partido finalizado."
+clip empate_en_sets "Empate en sets."
 
 # «Ding» de aviso (dos tonos cortos)
 ffmpeg -hide_banner -loglevel error -y \

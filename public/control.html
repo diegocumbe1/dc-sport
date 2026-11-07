@@ -53,6 +53,7 @@
   <div class="box">
     <h2 id="soTitle">Set terminado</h2>
     <p class="muted" id="soText"></p>
+    <div id="soFinal"></div>
     <div class="row" id="soButtons"></div>
   </div>
 </div>
@@ -79,6 +80,7 @@
       <button class="alt hidden" id="mSwapServe" type="button">🏐 Cambiar quién saca</button>
       <button class="alt" id="mResetSet" type="button">Reiniciar set</button>
       <button class="danger" id="mResetMatch" type="button">Reiniciar partido</button>
+      <button class="ok hidden" id="mEnd" type="button">🏁 Finalizar partido</button>
     </div>
     <div class="menu-grid">
       <label>Puntos por set (con el set en 0-0)
@@ -264,6 +266,7 @@
     $('undo').disabled = !s.canUndo;
     $('mUndo').disabled = !s.canUndo;
     $('jUndo').disabled = !s.canUndo;
+    $('mEnd').classList.toggle('hidden', !(s.phase === 'playing' && (s.points.some(p => p > 0) || s.teamSets.some(x => x > 0))));
     $('mSwapServe').classList.toggle('hidden', !(s.hasServeOrder && s.phase === 'playing' && s.points.every(p => p === 0)));
     $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
     $('target').value = s.config.pointsPerSet;
@@ -272,6 +275,14 @@
 
     const ov = $('setOver');
     if (s.phase === 'playing') { ov.classList.add('hidden'); return; }
+    $('soFinal').innerHTML = s.phase === 'finished' ? DC.finalHtml(s) : '';
+    if (s.phase === 'finished') {
+      $('soTitle').textContent = DC.finalTitle(s);
+      $('soText').textContent = '';
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">↶ Reanudar partido</button><button class="danger" data-act="reset">Nuevo partido</button><button class="alt" data-act="home">⌂ Inicio</button>`;
+      ov.classList.remove('hidden');
+      return;
+    }
     const last = s.setResults[s.setResults.length - 1];
     const score = last ? `${last.points[0]}-${last.points[1]}` : '';
     if (s.phase === 'setOver') {
@@ -288,7 +299,7 @@
       } else {
         buttons = `<button class="ok" data-act="next">Comenzar set ${s.currentSet + 1}</button>`;
       }
-      $('soButtons').innerHTML = buttons + `<button class="alt" data-act="undo">Deshacer último punto</button>`;
+      $('soButtons').innerHTML = buttons + `<button class="alt" data-act="undo">Deshacer último punto</button><button class="alt" data-act="end">🏁 Finalizar partido</button>`;
     } else {
       $('soTitle').textContent = `¡${s.teams[s.matchWinner].name} gana el partido!`;
       $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}`;
@@ -299,15 +310,10 @@
 
   // ---------- Tabla de posiciones ----------
   function renderRank() {
-    const { rows, total } = DC.standings(state);
-    const medal = p => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[p] || p + '.');
+    const { total } = DC.standings(state);
     $('rank').innerHTML = `<div class="rank-head"><b>Posiciones</b><span class="muted">${total} ${total === 1 ? 'set jugado' : 'sets jugados'} · set actual ${state.currentSet}</span></div>
-      <table><thead><tr><th></th><th>Equipo</th><th title="Sets ganados">G</th><th title="Sets perdidos">P</th><th title="Sets jugados">J</th><th title="Diferencia de puntos">Dif</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td class="pos">${medal(r.pos)}</td>
-        <td><span class="dot" style="background:${DC.esc(r.color)}"></span>${DC.esc(r.name)}${r.status ? ` <small class="muted">${r.status}</small>` : ''}</td>
-        <td><b>${r.won}</b></td><td>${r.lost}</td><td>${r.played}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td></tr>`).join('')}
-      </tbody></table>
-      <p class="muted rank-foot">G ganados · P perdidos · J jugados · Dif puntos a favor − en contra. Toca fuera para cerrar.</p>`;
+      ${DC.standingsTable(state, { status: true })}
+      <p class="muted rank-foot">G ganados · P perdidos · J jugados · Pts a favor · Dif a favor − en contra. Toca fuera para cerrar.</p>`;
   }
   function toggleRank(force) {
     if (!state) return;
@@ -425,6 +431,13 @@
   }
   const undo = () => { cancelPending(); return run({ type: 'undo' }, 'Acción deshecha'); };
   const resetMatch = () => { if (confirm('¿Reiniciar el partido completo? Se ponen en 0 puntos y sets de ambos equipos.')) run({ type: 'resetMatch' }, 'Partido reiniciado'); };
+  // Un set a medias no cuenta: se avisa antes de cerrar. Se puede reanudar con deshacer.
+  const endMatch = () => {
+    cancelPending();
+    const [a, b] = state.points;
+    const partial = state.phase === 'playing' && (a > 0 || b > 0);
+    if (confirm(`¿Finalizar el partido?${partial ? ` El set ${state.currentSet} va ${a}-${b} y no contará.` : ''}`)) run({ type: 'endMatch' });
+  };
   const closeMenu = () => $('menu').classList.add('hidden');
 
   $('undo').onclick = undo;
@@ -438,6 +451,8 @@
       run(cmd).then(res => { if (!res.ok) render(); });
     } else if (act === 'undo') undo();
     else if (act === 'reset') resetMatch();
+    else if (act === 'end') endMatch();
+    else if (act === 'home') location.href = $('homeBtn').href;
   });
   $('menuBtn').onclick = () => $('menu').classList.remove('hidden');
   $('mClose').onclick = closeMenu;
@@ -446,6 +461,7 @@
   $('mSwapServe').onclick = () => { run({ type: 'swapServe' }); closeMenu(); };
   $('mResetSet').onclick = () => { if (confirm('¿Poner en 0 los puntos del set actual?')) { run({ type: 'resetSet' }, 'Set reiniciado'); closeMenu(); } };
   $('mResetMatch').onclick = () => { resetMatch(); closeMenu(); };
+  $('mEnd').onclick = () => { closeMenu(); endMatch(); };
   $('target').onchange = e => run({ type: 'target', target: Number(e.target.value) }, 'Puntos por set actualizados');
   // Listas desde /config/options.json
   DC.options().then(o => {
