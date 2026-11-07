@@ -204,7 +204,7 @@
     // Con orden de saque el anuncio es corto: marcador (primero quien saca) y quién saca.
     if (s.hasServeOrder) {
       const srv = s.serve === 1 ? 1 : 0;
-      const saca = `Saca ${[A, B][srv]}${s.serveNumber !== null ? ` ${s.serveNumber}` : ''}.`;
+      const saca = s.serveNumber !== null ? `Saca jugador número ${s.serveNumber}, ${[A, B][srv]}.` : `Saca ${[A, B][srv]}.`;
       if (a === b) return `${a === 0 ? 'Cero a cero' : `Empate a ${a}`}. ${saca}${a && s.maxPoints && a === s.maxPoints - 1 ? ' Punto decisivo.' : ''}`;
       return `${s.points[srv]} a ${s.points[1 - srv]}. ${saca}${Math.max(a, b) >= s.target - 1 ? ` Punto de set para ${[A, B][a > b ? 0 : 1]}.` : ''}`;
     }
@@ -372,7 +372,7 @@
       // Con orden de saque el anuncio es corto: marcador (primero quien saca) y quién saca.
       const srv = s.serve === 1 ? 1 : 0;
       const names = s.teams.map(team);
-      const saca = ['saca', names[srv], ...(s.serveNumber !== null ? [n(s.serveNumber)] : [])];
+      const saca = s.serveNumber !== null ? ['saca_jugador_numero', n(s.serveNumber), names[srv]] : ['saca', names[srv]];
       lead = ',';
       if (a === b) {
         parts = [...(a === 0 ? ['cero_a_cero'] : ['empate_a', n(a)]), ',', ...saca];
@@ -486,7 +486,7 @@
     const el = clipEl();
     el.src = URL.createObjectURL(makeWav(new Int16Array(CLIP_RATE / 20)));
     el.play().catch(() => {});
-    const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
+    const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'saca_jugador_numero', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
     for (let i = 0; i <= 30; i++) common.push('n' + i);
     // Números del orden de saque: se precargan para que el primer anuncio de cada uno no se demore.
     if (s) for (const t of s.allTeams) for (const j of t.serveOrder || []) common.push('n' + j);
