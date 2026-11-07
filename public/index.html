@@ -162,13 +162,16 @@
     return [...document.querySelectorAll('#teamRows .team-field')].map(row => ({
       name: row.querySelector('.t-name').value.trim(),
       color: row.querySelector('.t-color').value,
-      serve: row.querySelector('.t-serve').value.trim(),
+      serve: [...row.querySelectorAll('.t-serve')].map(i => i.value).filter(Boolean),
     }));
   }
-  // «5. 8, 21 0-10» → [5, 8, 21, 0, 10]. Sirve cualquier separador. null si algo no es un número válido.
-  function parseServeOrder(text) {
-    const parts = text.split(/[^0-9a-zñáéíóú]+/i).filter(Boolean);
-    return parts.length <= 12 && parts.every(p => /^\d{1,2}$/.test(p)) ? parts.map(Number) : null;
+  // Orden de saque: una casilla por jugador. Siempre queda una libre, hasta el máximo.
+  const SERVE_BOXES = 6;
+  const SERVE_BOXES_MAX = 12;
+  const serveBox = (team, pos, value = '') => `<input class="t-serve" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="Equipo ${team + 1}, saque ${pos + 1}" value="${DC.esc(value)}">`;
+  function drawServeBoxes(team, values) {
+    const n = Math.min(Math.max(SERVE_BOXES, values.length + 1), SERVE_BOXES_MAX);
+    return Array.from({ length: n }, (_, k) => serveBox(team, k, values[k])).join('');
   }
   // Solo los dos primeros equipos están en cancha al empezar; si hay orden de saque se elige quién saca.
   function drawFirstServe(keep) {
@@ -177,7 +180,7 @@
     const value = keep ?? sel.value ?? '0';
     sel.innerHTML = rows.slice(0, 2).map((t, i) => `<option value="${i}">${DC.esc(t.name || (PALETTE.find(c => c.value === t.color) || {}).label || `Equipo ${i + 1}`)}</option>`).join('');
     sel.value = value === '1' ? '1' : '0';
-    $('firstServeField').classList.toggle('hidden', !rows.some(t => t.serve));
+    $('firstServeField').classList.toggle('hidden', !rows.some(t => t.serve.length));
   }
   function drawRows(n, keep) {
     const prev = keep || readRows();
@@ -187,7 +190,8 @@
       return `<div class="field team-field"><span>Equipo ${i + 1}</span>
         <span class="team-row"><input class="t-name" maxlength="20" data-fallback="EQUIPO ${i + 1}" value="${DC.esc(t.name || '')}">
         ${DC.colorSelect(PALETTE, color)}</span>
-        <input class="t-serve" inputmode="decimal" autocomplete="off" aria-label="Orden de saque del equipo ${i + 1}" placeholder="Orden de saque (opcional)" value="${DC.esc(t.serve || '')}"></div>`;
+        <span class="serve-label">Orden de saque (opcional)</span>
+        <span class="serve-boxes">${drawServeBoxes(i, Array.isArray(t.serve) ? t.serve : [])}</span></div>`;
     }).join('');
     DC.bindColorRows($('teamRows'), PALETTE);
     // La rotación solo aplica con 3 o más equipos.
@@ -207,6 +211,19 @@
     drawFirstServe(draft.firstServe);
   });
   $('voice').checked = draft.voice !== false; // voz activa por defecto
+  // Solo dígitos; con 2 dígitos pasa a la siguiente casilla; si se llenan todas, aparece otra.
+  $('teamRows').addEventListener('input', e => {
+    const box = e.target;
+    if (!box.classList.contains('t-serve')) return;
+    box.value = box.value.replace(/\D/g, '').slice(0, 2);
+    const wrap = box.parentElement;
+    const boxes = [...wrap.children];
+    if (boxes.length < SERVE_BOXES_MAX && boxes.every(b => b.value)) {
+      const team = [...$('teamRows').children].indexOf(wrap.closest('.team-field'));
+      wrap.insertAdjacentHTML('beforeend', serveBox(team, boxes.length));
+    }
+    if (box.value.length === 2 && box.nextElementSibling) box.nextElementSibling.focus();
+  });
   $('count').onchange = () => { drawRows(Number($('count').value)); saveDraft(); };
   $('setupForm').addEventListener('input', () => { drawFirstServe(); saveDraft(); });
   $('setupForm').addEventListener('change', saveDraft);
@@ -214,12 +231,7 @@
   async function createBoard(pin) {
     const r = currentRoom();
     const rows = readRows();
-    const serveOrders = rows.map(t => parseServeOrder(t.serve));
-    const badOrder = serveOrders.indexOf(null);
-    if (badOrder !== -1) {
-      DC.toast(`Orden de saque del equipo ${badOrder + 1}: hasta 12 números de 0 a 99`, 'bad');
-      return;
-    }
+    const serveOrders = rows.map(t => t.serve.map(Number));
     const body = {
       teams: rows.map(({ name, color }) => ({ name, color })),
       serveOrders,
