@@ -146,6 +146,11 @@ test('crear tablero: orden de saque opcional, y reconfigurar sin él lo quita', 
   assert.equal((await setup('saque2', { teams: [{}, {}], serveOrders: [[100]] })).status, 400);
 });
 
+test('crear tablero: solo es sala de torneo si se pide', async () => {
+  assert.equal((await setup('recreativa1', { teams: [{}, {}] })).state.torneo, false);
+  assert.equal((await setup('torneo1', { teams: [{}, {}], torneo: true })).state.torneo, true);
+});
+
 test('crear tablero desde el inicio con N equipos', async () => {
   const r = await setup('torneo', { teams: [{ name: 'Leones' }, { name: '' }, { name: 'Tigres', color: '#00aa00' }], pointsPerSet: 15, rotation: 'winnerStays' });
   assert.equal(r.ok, true);

@@ -263,6 +263,8 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
   const draft = volley.hydrate(JSON.parse(JSON.stringify(g)));
   const prevVersion = draft.version;
   Object.assign(draft, volley.makeGame(draft));
+  // Sala creada por un torneo: sin música y sin reinicios desde el control.
+  draft.torneo = body.torneo === true;
   const steps = [
     { type: 'setTeams', teams: body.teams },
     {

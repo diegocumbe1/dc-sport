@@ -172,6 +172,7 @@
   // deja de anunciar y la música de Spotify en la página se detiene.
   let wakeLock = null;
   let musicOn = false;
+  let musicAllowed = false;
   async function keepAwake() {
     try { if ((judge || voice.isOn() || musicOn) && 'wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
   }
@@ -182,7 +183,7 @@
     if (!voice.state()) { DC.toast('Conectando con la sala…'); return; }
     voice.unlock();
     // Con Spotify conectado, el mismo toque pasa la música a este celular (iOS exige un toque).
-    if (DC.spotify.connected()) DC.spotify.play();
+    if (musicAllowed && DC.spotify.connected()) DC.spotify.play();
     keepAwake();
     $('voiceStart').classList.add('hidden');
   };
@@ -198,22 +199,23 @@
     paused: '⏸ En pausa. Dale play desde la app de Spotify o toca «🎵 Música aquí».',
   };
   function paintSpotify(status = DC.spotify.connected() ? 'ready' : 'off', msg) {
-    const on = DC.spotify.connected();
+    const on = musicAllowed && DC.spotify.connected();
     if (status === 'playing' && !musicOn) { musicOn = true; keepAwake(); }
     if (status === 'off') musicOn = false;
     $('mSpotify').textContent = on ? '🎵 Música aquí' : '🎵 Conectar Spotify';
     $('mSpotify').className = on ? 'ok' : 'alt';
+    $('mSpotify').classList.toggle('hidden', !musicAllowed);
+    $('spStatus').classList.toggle('hidden', !musicAllowed);
     $('mSpotifyOut').classList.toggle('hidden', !on);
     const text = status === 'error' ? '⚠ ' + msg : SP_TEXT[status] + (status === 'playing' && msg ? ` · ${msg}` : '');
     $('spStatus').textContent = 'Spotify: ' + text;
     $('vsMusic').textContent = on ? '🎵 Spotify conectado: «Activar voz» también pone la música en este celular.' : '';
     $('vsGo').textContent = on ? 'Activar voz y música' : 'Activar voz';
-    $('vsSpotify').classList.toggle('hidden', on);
-    if (status === 'error') DC.toast('Spotify: ' + msg, 'bad');
+    $('vsSpotify').classList.toggle('hidden', on || !musicAllowed);
+    if (status === 'error' && musicAllowed) DC.toast('Spotify: ' + msg, 'bad');
   }
   DC.spotify.onChange(paintSpotify);
   paintSpotify();
-  DC.spotify.prepare(); // si ya hay sesión, deja el reproductor listo para el primer toque
   $('mSpotify').onclick = () => { DC.spotify.play(); keepAwake(); };
   $('vsSpotify').onclick = () => DC.spotify.login();
   $('mSpotifyOut').onclick = () => { DC.spotify.logout(); DC.toast('Spotify desconectado de este celular'); };
@@ -228,6 +230,13 @@
     onState: s => {
       const prev = state;
       state = s;
+      // Hasta saber de qué sala se trata, Spotify queda oculto: las de torneo no llevan música.
+      const allowed = !s.torneo;
+      if (allowed !== musicAllowed) {
+        musicAllowed = allowed;
+        paintSpotify();
+        if (allowed) DC.spotify.prepare(); // si ya hay sesión, deja el reproductor listo para el primer toque
+      }
       // Un toque que aún espera la ventana de doble toque conserva su puntaje adelantado
       // aunque llegue un estado nuevo (por ejemplo, un punto del otro lado).
       for (const t of [0, 1]) if (pending[t] && optimistic[t]) optimistic[t].version = s.version;
@@ -271,6 +280,9 @@
     $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
     $('target').value = s.config.pointsPerSet;
     $('target').disabled = s.points.some(v => v !== 0);
+    // En un torneo las reglas y el resultado no se cambian desde aquí.
+    $('target').closest('label').classList.toggle('hidden', !!s.torneo);
+    $('mResetMatch').classList.toggle('hidden', !!s.torneo);
     document.body.classList.toggle('locked', s.phase !== 'playing');
 
     const ov = $('setOver');
@@ -278,8 +290,8 @@
     $('soFinal').innerHTML = s.phase === 'finished' ? DC.finalHtml(s) : '';
     if (s.phase === 'finished') {
       $('soTitle').textContent = DC.finalTitle(s);
-      $('soText').textContent = '';
-      $('soButtons').innerHTML = `<button class="alt" data-act="undo">↶ Reanudar partido</button><button class="danger" data-act="reset">Nuevo partido</button><button class="alt" data-act="home">⌂ Inicio</button>`;
+      $('soText').textContent = s.torneo ? 'El organizador confirmará el resultado en el torneo.' : '';
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">↶ Reanudar partido</button>${s.torneo ? '' : '<button class="danger" data-act="reset">Nuevo partido</button>'}<button class="alt" data-act="home">⌂ Inicio</button>`;
       ov.classList.remove('hidden');
       return;
     }
@@ -302,8 +314,8 @@
       $('soButtons').innerHTML = buttons + `<button class="alt" data-act="undo">Deshacer último punto</button><button class="alt" data-act="end">🏁 Finalizar partido</button>`;
     } else {
       $('soTitle').textContent = `¡${s.teams[s.matchWinner].name} gana el partido!`;
-      $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}`;
-      $('soButtons').innerHTML = `<button class="alt" data-act="undo">Deshacer último punto</button><button class="danger" data-act="reset">Nuevo partido</button>`;
+      $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}${s.torneo ? '. El organizador confirmará el resultado en el torneo.' : ''}`;
+      $('soButtons').innerHTML = `<button class="alt" data-act="undo">Deshacer último punto</button>${s.torneo ? '' : '<button class="danger" data-act="reset">Nuevo partido</button>'}`;
     }
     ov.classList.remove('hidden');
   }

@@ -8,6 +8,20 @@ function score(g, a, b) {
   for (let i = 0; i < b; i++) pt(g, 1);
 }
 
+test('sala de torneo: el control no reinicia el partido ni cambia las reglas; el admin sí', () => {
+  const g = makeGame();
+  g.torneo = true;
+  score(g, 3, 1);
+  assert.equal(apply(g, { type: 'resetMatch' }).ok, false);
+  assert.deepEqual(g.points, [3, 1]);
+  assert.equal(apply(g, { type: 'target', target: 15 }).ok, false);
+  assert.equal(makeGame(g).torneo, true);
+  assert.equal(apply(g, { type: 'resetMatch' }, { admin: true }).ok, true);
+  assert.deepEqual(g.points, [0, 0]);
+  assert.equal(g.torneo, true);
+  assert.equal(hydrate(JSON.parse(JSON.stringify(g))).torneo, true);
+});
+
 test('suma y resta sin negativos', () => {
   const g = makeGame();
   assert.equal(pt(g, 0).ok, true);

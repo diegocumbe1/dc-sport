@@ -80,6 +80,7 @@ function makeGame(prev) {
     teams,
     config: prev ? { ...prev.config } : { ...DEFAULT_CONFIG },
     voice: prev ? { ...prev.voice } : { ...DEFAULT_VOICE },
+    torneo: prev ? prev.torneo === true : false, // sala de un torneo: sin música y el juez no puede borrar el partido
     court: [0, 1],
     queue: teams.map((_, i) => i).slice(2),
     points: [0, 0],
@@ -252,6 +253,8 @@ function apply(g, cmd, { admin = false } = {}) {
       break;
     }
     case 'resetMatch': {
+      // En un torneo el resultado es oficial: desde el control no se puede borrar.
+      if (g.torneo && !admin) return fail('En un torneo el partido no se puede reiniciar desde el control');
       // Conserva equipos, configuración y bitácora; permite deshacer el reinicio.
       pushUndo(g, 'Reinicio de partido');
       const keepUndo = g.undo;
@@ -280,6 +283,7 @@ function apply(g, cmd, { admin = false } = {}) {
     }
     case 'target': {
       // Acción heredada del control original: solo con el set en 0-0.
+      if (g.torneo && !admin) return fail('Las reglas las define el torneo');
       if (!POINTS_OPTIONS.includes(cmd.target)) return fail('Puntos por set inválidos');
       if (g.points.some(x => x !== 0)) return fail('Solo se puede cambiar con el set en 0-0');
       pushUndo(g, 'Cambio de puntos por set');
@@ -477,6 +481,7 @@ function publicState(room, g) {
     nextIn,
     config: g.config,
     voice: g.voice,
+    torneo: g.torneo === true,
     points: g.points,
     serve: g.serve,
     hasServeOrder: hasServeOrder(g),
