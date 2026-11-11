@@ -146,6 +146,39 @@ test('crear tablero: orden de saque opcional, y reconfigurar sin él lo quita', 
   assert.equal((await setup('saque2', { teams: [{}, {}], serveOrders: [[100]] })).status, 400);
 });
 
+test('voz: se elige al crear el tablero y el control la cambia en pleno partido', async () => {
+  const made = await setup('voz1', { teams: [{ name: 'Los Tigres', color: '#1f9d55' }, {}], voice: { enabled: true, speaker: 'mx-m', announce: 'color' } });
+  assert.equal(made.status, 200);
+  assert.equal(made.state.voice.speaker, 'mx-m');
+  assert.equal(made.state.voice.announce, 'color');
+  assert.equal((await setup('voz2', { teams: [{}, {}] })).state.voice.speaker, 'co-f');
+  assert.equal((await setup('voz2', { teams: [{}, {}] })).state.voice.announce, 'name');
+  assert.equal((await setup('voz3', { teams: [{}, {}], voice: { speaker: 'robot' } })).status, 400);
+  const c = await client('voz1', 'control');
+  assert.equal((await cmd(c, { type: 'point', team: 0, delta: 1 })).ok, true);
+  assert.equal((await cmd(c, { type: 'setVoiceStyle', speaker: 'la-f', announce: 'name' })).ok, true);
+  const st = await waitState(c, x => x.voice.speaker === 'la-f');
+  assert.equal(st.voice.announce, 'name');
+  assert.deepEqual(st.points, [1, 0]); // la voz no toca el marcador
+  assert.equal((await cmd(c, { type: 'setVoiceStyle', speaker: 'robot' })).ok, false);
+  // El nombre de un equipo solo se sintetiza si existe en alguna sala.
+  assert.equal((await fetch(`${BASE}/api/voz/co-f?t=${encodeURIComponent('Nadie Juega')}`)).status, 404);
+  assert.equal((await fetch(`${BASE}/api/voz/robot?t=x`)).status, 400);
+});
+
+test('música: llega desde /setup y la pantalla la cambia, pero no marca puntos', async () => {
+  const made = await setup('musica1', { teams: [{}, {}], music: { youtube: 'https://music.youtube.com/playlist?list=OLAK5uy_abcdefghijk' } });
+  assert.deepEqual(made.state.music.youtube, { video: null, list: 'OLAK5uy_abcdefghijk' });
+  assert.equal((await setup('musica2', { teams: [{}, {}], music: { youtube: 'no es un enlace' } })).status, 400);
+  const screen = await client('musica1', 'marcador');
+  assert.equal((await cmd(screen, { type: 'setMusic', youtube: 'https://youtu.be/dQw4w9WgXcQ' })).ok, true);
+  const st = await waitState(screen, x => x.music.youtube && x.music.youtube.video === 'dQw4w9WgXcQ');
+  assert.equal(st.music.youtube.list, null);
+  assert.equal((await cmd(screen, { type: 'setVoiceStyle', speaker: 'mx-f' })).ok, true);
+  assert.equal((await cmd(screen, { type: 'point', team: 0, delta: 1 })).ok, false);
+  assert.equal((await cmd(screen, { type: 'setMusic', youtube: null })).ok, true);
+});
+
 test('crear tablero: solo es sala de torneo si se pide', async () => {
   assert.equal((await setup('recreativa1', { teams: [{}, {}] })).state.torneo, false);
   assert.equal((await setup('torneo1', { teams: [{}, {}], torneo: true })).state.torneo, true);

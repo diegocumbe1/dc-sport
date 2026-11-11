@@ -211,21 +211,25 @@
 
   // Texto hablado del marcador. Nombres en formato "Azul" (en MAYÚSCULAS algunas voces deletrean).
   const spoken = n => String(n).toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+  // Cómo se nombra a un equipo en voz: su nombre o, si la sala anuncia por color, su color.
+  const byColor = s => !!(s.voice && s.voice.announce === 'color');
+  const voiceName = (s, t) => spoken((byColor(s) && colorLabel(palette, t.color)) || t.name);
   function scoreSpeech(s) {
-    const [A, B] = s.teams.map(t => spoken(t.name));
+    const team = t => voiceName(s, t);
+    const [A, B] = s.teams.map(team);
     const [a, b] = s.points;
     if (s.phase === 'finished') {
       const { winner, rows } = finalResult(s);
       if (!winner) return 'Partido finalizado. Empate en sets.';
-      return `¡${spoken(winner.name)} gana el partido! ${rows.length === 2 ? `Sets, ${winner.won} a ${rows[1].won}.` : `Sets ganados, ${winner.won}.`}`;
+      return `¡${team(winner)} gana el partido! ${rows.length === 2 ? `Sets, ${winner.won} a ${rows[1].won}.` : `Sets ganados, ${winner.won}.`}`;
     }
     if (s.phase === 'matchOver') {
-      return `¡${spoken(s.teams[s.matchWinner].name)} gana el partido! Sets, ${s.sets[s.matchWinner]} a ${s.sets[1 - s.matchWinner]}.`;
+      return `¡${team(s.teams[s.matchWinner])} gana el partido! Sets, ${s.sets[s.matchWinner]} a ${s.sets[1 - s.matchWinner]}.`;
     }
     if (s.phase === 'setOver') {
       const w = s.setWinner;
-      const next = s.rotationMode && s.nextIn !== null ? ` Se prepara ${spoken(s.allTeams[s.nextIn].name)}.` : '';
-      return `¡Set para ${spoken(s.teams[w].name)}! Quedó ${s.points[w]} a ${s.points[1 - w]}.${next}`;
+      const next = s.rotationMode && s.nextIn !== null ? ` Se prepara ${team(s.allTeams[s.nextIn])}.` : '';
+      return `¡Set para ${team(s.teams[w])}! Quedó ${s.points[w]} a ${s.points[1 - w]}.${next}`;
     }
     // Con orden de saque el anuncio es corto: marcador (primero quien saca) y quién saca.
     if (s.hasServeOrder) {
@@ -307,7 +311,17 @@
     if (s.maxPoints === null || s.maxPoints === undefined) return `a ${s.target}`;
     return s.maxPoints === s.target ? `a ${s.target} · sin alargue` : `a ${s.target} · máx. ${s.maxPoints}`;
   }
+  // Avisos de «la voz empezó / terminó de hablar» (para bajar la música mientras habla).
+  const speakingListeners = new Set();
+  let speakingNow = false;
+  function setSpeaking(on) {
+    if (on === speakingNow) return;
+    speakingNow = on;
+    speakingListeners.forEach(fn => { try { fn(on); } catch {} });
+  }
+  const onSpeaking = fn => { speakingListeners.add(fn); return () => speakingListeners.delete(fn); };
   function stopSpeaking() {
+    setSpeaking(false);
     clearTimeout(voiceTimer);
     clipToken++; // invalida el anuncio grabado en curso
     if (clipAudio) clipAudio.pause();
@@ -337,8 +351,10 @@
       u.lang = v ? v.lang : (c.lang === 'es-CO' ? 'es-MX' : c.lang);
       u.rate = c.rate;
       if (v) u.voice = v.voice;
+      u.onstart = () => setSpeaking(true);
       u.onend = () => {
         done++;
+        setSpeaking(false);
         if (done < c.repeat) voiceTimer = setTimeout(() => once(useVoice), c.interval * 1000);
       };
       // Algunas voces listadas no están instaladas en el iPhone y fallan en silencio:
@@ -355,17 +371,22 @@
     return true;
   }
 
-  // ---------- Voz grabada (public/audio/voz, generada con scripts/generar-voz.sh) ----------
+  // ---------- Voz grabada (public/audio/voz/<voz>, generada con scripts/generar-voces.js) ----------
   // En iPhone la voz del navegador PAUSA la música (Spotify); un audio normal suena encima sin
-  // pausarla. Cada anuncio se arma uniendo audios WAV (mono, 16 bits) en un solo WAV con un «ding»
-  // al inicio, y se reproduce con un único <audio> desbloqueado en el primer toque (iOS bloquea
-  // audios que no nacen de un toque). Si falta algún audio, se usa la voz del navegador.
+  // pausarla. Cada anuncio se arma uniendo audios (MP3 decodificados a mono 16 bits) en un solo
+  // WAV con un «ding» al inicio, y se reproduce con un único <audio> desbloqueado en el primer
+  // toque (iOS bloquea audios que no nacen de un toque). Hay varias voces (s.voice.speaker); los
+  // nombres de los equipos los genera el servidor con la misma voz (/api/voz/<voz>?t=NOMBRE).
+  // Si falta algún audio, se usa la voz del navegador.
   const CLIP_RATE = 22050;
   const CLIP_MAX_NUMBER = 99;
   const GAP = { ',': 0.18, '|': 0.35 }; // pausas (s): coma y punto
   const WORD_GAP = 0.04;
-  const clipCache = new Map(); // clave → Promise<Int16Array>
-  let palette = []; // colores de options.json: el anuncio usa el nombre del color del equipo
+  const clipCache = new Map(); // «voz/clave» → Promise<Int16Array>
+  let palette = []; // colores de options.json: para anunciar por color
+  let speakers = []; // voces grabadas de options.json (voiceSpeaker)
+  const DEFAULT_SPEAKER = 'co-f';
+  const NAME_PREFIX = 'name:'; // clave de un nombre de equipo: «name:LOS TIGRES»
   let clipAudio = null;
   let clipUrl = null;
   let clipToken = 0;
@@ -383,7 +404,7 @@
     new Int16Array(buf, 44).set(samples);
     return new Blob([buf], { type: 'audio/wav' });
   }
-  // Muestras de un WAV: busca el bloque «data» (por si el archivo trae otros bloques).
+  // Muestras de un WAV mono 16 bits: busca el bloque «data» (por si el archivo trae otros bloques).
   function wavSamples(buf) {
     const v = new DataView(buf);
     for (let o = 12; o + 8 <= buf.byteLength;) {
@@ -394,25 +415,70 @@
     }
     throw new Error('WAV sin datos');
   }
-  function loadClip(key) {
-    if (!clipCache.has(key)) {
-      const p = fetch(`/audio/voz/${key}.wav`)
+  // MP3 → muestras mono a CLIP_RATE. El navegador decodifica y remuestrea al ritmo del contexto.
+  // OfflineAudioContext no suena ni toma el audio del sistema (no pausa la música en iPhone).
+  let decoderCtx = null;
+  function decodeMp3(buf) {
+    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Ctx) return Promise.reject(new Error('Sin decodificador de audio'));
+    decoderCtx = decoderCtx || new Ctx(1, 1, CLIP_RATE);
+    // Forma con callbacks: Safari antiguo no devuelve promesa.
+    return new Promise((resolve, reject) => decoderCtx.decodeAudioData(buf, resolve, reject))
+      .then(ab => ab.getChannelData(0));
+  }
+  // Quita silencio al inicio y al final (relleno del MP3) dejando un margen corto.
+  function trimSilence(x, threshold = 0.006, margin = Math.round(0.02 * CLIP_RATE)) {
+    let a = 0, b = x.length - 1;
+    while (a < b && Math.abs(x[a]) < threshold) a++;
+    while (b > a && Math.abs(x[b]) < threshold) b--;
+    return x.subarray(Math.max(0, a - margin), Math.min(x.length, b + 1 + margin));
+  }
+  // Los nombres llegan sin procesar: se llevan al nivel de los audios grabados (ffmpeg -17.5 LUFS).
+  const NAME_RMS = 0.13;
+  function matchLevel(x) {
+    let sum = 0, n = 0;
+    for (const v of x) if (Math.abs(v) > 0.02) { sum += v * v; n++; }
+    if (!n) return x;
+    const k = Math.min(NAME_RMS / Math.sqrt(sum / n), 4);
+    return x.map(v => Math.max(-1, Math.min(1, v * k)));
+  }
+  const toInt16 = x => Int16Array.from(x, v => Math.round(Math.max(-1, Math.min(1, v)) * 32767));
+  const speakerOf = s => (s && s.voice && speakers.some(o => o.value === s.voice.speaker) ? s.voice.speaker : DEFAULT_SPEAKER);
+  function clipUrlFor(speaker, key) {
+    if (key === 'ding') return '/audio/voz/ding.wav';
+    if (key.startsWith(NAME_PREFIX)) return `/api/voz/${speaker}?t=${encodeURIComponent(key.slice(NAME_PREFIX.length))}`;
+    return `/audio/voz/${speaker}/${key}.mp3`;
+  }
+  function loadClip(key, speaker = DEFAULT_SPEAKER) {
+    const id = key === 'ding' ? key : speaker + '/' + key;
+    if (!clipCache.has(id)) {
+      const isName = key.startsWith(NAME_PREFIX);
+      const p = fetch(clipUrlFor(speaker, key), { headers: { 'ngrok-skip-browser-warning': '1' } })
         .then(r => { if (!r.ok) throw new Error('Falta el audio ' + key); return r.arrayBuffer(); })
-        .then(wavSamples);
-      p.catch(() => clipCache.delete(key)); // se reintenta en el próximo anuncio
-      clipCache.set(key, p);
+        .then(buf => (key === 'ding' ? wavSamples(buf) : decodeMp3(buf).then(x => {
+          const t = trimSilence(x);
+          return toInt16(isName ? matchLevel(t) : t);
+        })));
+      p.catch(() => clipCache.delete(id)); // se reintenta en el próximo anuncio
+      clipCache.set(id, p);
     }
-    return clipCache.get(key);
+    return clipCache.get(id);
   }
   const colorKey = label => 'c_' + label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
   // Claves de audio del anuncio: mismo contenido que scoreSpeech. ',' y '|' son pausas.
   // Devuelve null si algo no tiene audio (número fuera de rango, color no grabado).
-  function scoreClips(s) {
-    const team = t => {
-      const c = palette.find(p => p.value.toLowerCase() === String(t.color).toLowerCase());
-      return c ? colorKey(c.label) : null;
-    };
+  // `forceColor`: anuncia por color aunque la sala diga nombre (respaldo si el nombre no carga).
+  function teamClip(s, t, forceColor = false) {
+    const c = palette.find(p => p.value.toLowerCase() === String(t.color).toLowerCase());
+    const color = c ? colorKey(c.label) : null;
+    if (forceColor || byColor(s)) return color;
+    // Un nombre igual a un color (AZUL, ROJO…) ya está grabado.
+    const same = palette.find(p => p.label.toUpperCase() === String(t.name).toUpperCase());
+    return same ? colorKey(same.label) : NAME_PREFIX + String(t.name).toUpperCase();
+  }
+  function scoreClips(s, forceColor = false) {
+    const team = t => teamClip(s, t, forceColor);
     const n = x => (Number.isInteger(x) && x >= 0 && x <= CLIP_MAX_NUMBER ? 'n' + x : null);
     const [a, b] = s.points;
     let parts;
@@ -498,8 +564,8 @@
     return out;
   }
 
-  async function buildClip(parts, fx) {
-    const raw = await Promise.all(parts.filter(p => !(p in GAP)).map(loadClip));
+  async function buildClip(parts, fx, speaker) {
+    const raw = await Promise.all(parts.filter(p => !(p in GAP)).map(k => loadClip(k, speaker)));
     // El ding no se procesa (es un tono de aviso); solo la voz.
     const keys = parts.filter(p => !(p in GAP));
     const data = raw.map((d, i) => (keys[i] === 'ding' ? d : shapeVoice(d, fx)));
@@ -518,10 +584,15 @@
     return makeWav(out);
   }
   // Reproduce el anuncio con repeticiones. false si no se pudo armar (para usar la voz del navegador).
-  async function playClips(parts, c) {
+  // `retry`: otras partes para intentar si las primeras no cargan (nombres → colores).
+  async function playClips(parts, c, retry) {
     const token = ++clipToken;
     let blob;
-    try { blob = await buildClip(parts, { gain: c.gain, presence: c.presence }); } catch { return false; }
+    const fx = { gain: c.gain, presence: c.presence };
+    try { blob = await buildClip(parts, fx, c.speaker); } catch {
+      if (!retry) return false;
+      try { blob = await buildClip(retry, fx, c.speaker); } catch { return false; }
+    }
     if (token !== clipToken) return true; // llegó un anuncio más nuevo
     const el = clipEl();
     if (clipUrl) URL.revokeObjectURL(clipUrl);
@@ -533,9 +604,11 @@
       el.defaultPlaybackRate = el.playbackRate = c.rate;
       el.onended = () => {
         done++;
+        if (token === clipToken) setSpeaking(false);
         if (done < c.repeat && token === clipToken) voiceTimer = setTimeout(once, c.interval * 1000);
       };
-      el.play().catch(() => {});
+      setSpeaking(true);
+      el.play().catch(() => setSpeaking(false));
     };
     once();
     return true;
@@ -547,11 +620,18 @@
     const el = clipEl();
     el.src = URL.createObjectURL(makeWav(new Int16Array(CLIP_RATE / 20)));
     el.play().catch(() => {});
+    preloadClips(s);
+  }
+  // Precarga los audios de la voz de la sala (y los nombres de sus equipos).
+  function preloadClips(s) {
+    if (!audioSupported) return;
+    const speaker = speakerOf(s);
     const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'saca_jugador_numero', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
     for (let i = 0; i <= 30; i++) common.push('n' + i);
     // Números del orden de saque: se precargan para que el primer anuncio de cada uno no se demore.
     if (s) for (const t of s.allTeams) for (const j of t.serveOrder || []) common.push('n' + j);
-    common.concat(palette.map(p => colorKey(p.label))).forEach(k => loadClip(k).catch(() => {}));
+    if (s) for (const t of s.allTeams) common.push(teamClip(s, t));
+    common.concat(palette.map(p => colorKey(p.label))).forEach(k => k && loadClip(k, speaker).catch(() => {}));
   }
   // Anuncia el marcador: voz grabada si hay audios para todo; si no, la voz del navegador.
   // Aviso (una vez por carga) cuando se usa la voz del navegador: en iPhone pausa la música.
@@ -562,12 +642,18 @@
   }
   const SERVE_ORDER_RATE = 1.4; // velocidad mínima de la voz con orden de saque
   function announce(s, voiceCfg) {
-    const cfg = s.hasServeOrder ? { ...voiceCfg, rate: Math.max(voiceCfg.rate || 1, SERVE_ORDER_RATE) } : voiceCfg;
-    const c = { rate: 1, repeat: 1, interval: 3, gain: 1.5, presence: 6, ...cfg };
+    let cfg = s.hasServeOrder ? { ...voiceCfg, rate: Math.max(voiceCfg.rate || 1, SERVE_ORDER_RATE) } : voiceCfg;
+    const sp = speakers.find(o => o.value === speakerOf(s));
+    // La voz de respaldo (del navegador) usa el acento de la voz elegida.
+    if (sp) cfg = { ...cfg, lang: sp.lang };
+    const c = { rate: 1, repeat: 1, interval: 3, gain: 1.5, presence: 6, ...cfg, speaker: speakerOf(s) };
     const parts = audioSupported && palette.length ? scoreClips(s) : null;
     stopSpeaking();
     if (!parts) return fallbackSpeak(s, cfg, !palette.length ? 'sin colores cargados' : 'sin audio para este anuncio');
-    playClips(parts, c).then(ok => { if (!ok) fallbackSpeak(s, cfg, 'no se pudieron descargar los audios'); });
+    // Si el nombre de un equipo no carga (sin internet en el servidor), se anuncia por color.
+    const byColorParts = byColor(s) ? null : scoreClips(s, true);
+    const retry = byColorParts && byColorParts.join() !== parts.join() ? byColorParts : null;
+    playClips(parts, c, retry).then(ok => { if (!ok) fallbackSpeak(s, cfg, 'no se pudieron descargar los audios'); });
     return true;
   }
 
@@ -596,6 +682,9 @@
       paint();
       if (!enabledInRoom(s) || (!voiceSupported && !audioSupported)) { stopSpeaking(); return; }
       if (!voiceOn || !prev) return;
+      // Cambió la voz, la forma de anunciar o los equipos: se precargan los audios nuevos.
+      const voiceKey = x => [speakerOf(x), x.voice.announce, x.allTeams.map(t => t.name + t.color).join()].join('|');
+      if (voiceKey(prev) !== voiceKey(s)) preloadClips(s);
       const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet || prev.serveNumber !== s.serveNumber;
       if (!changed) return;
       // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
@@ -647,6 +736,35 @@
       if (a === 'test') speak(s ? scoreSpeech(s) : 'Azul, 6. Rojo, 4.', { ...(s && s.voice), repeat: 1 });
       if (a === 'save') { toast('Voz guardada: ' + sel.value, 'good'); ov.remove(); }
     });
+  }
+
+  // Selectores de la voz de la SALA (quién habla y si nombra equipos o colores). Los cambia
+  // cualquier control, antes o durante el partido, y suenan igual en todas las pantallas.
+  // `send` es api.send de DC.connect. Devuelve { sync(s) } para llamar en cada estado.
+  function voiceStyleFields(container, send) {
+    container.innerHTML = `<label>Anunciar equipos por <select data-vs="announce"></select></label>
+      <label>Voz <select data-vs="speaker"></select></label>`;
+    const sel = k => container.querySelector(`[data-vs="${k}"]`);
+    let current = null;
+    options().then(o => {
+      fillSelect(sel('announce'), o.voiceAnnounce, current && current.announce);
+      fillSelect(sel('speaker'), o.voiceSpeaker, current && current.speaker);
+    });
+    for (const k of ['announce', 'speaker']) {
+      sel(k).addEventListener('change', async e => {
+        const value = e.target.value;
+        const res = await send({ type: 'setVoiceStyle', [k]: value });
+        if (res.ok) toast(k === 'speaker' ? 'Voz: ' + e.target.selectedOptions[0].textContent : `Anuncia por ${value === 'color' ? 'color' : 'nombre'}`, 'good');
+        else { toast(res.error || 'No se pudo cambiar la voz', 'bad'); if (current) e.target.value = current[k]; }
+      });
+    }
+    return {
+      sync(s) {
+        if (!s || !s.voice) return;
+        current = s.voice;
+        for (const k of ['announce', 'speaker']) if (sel(k).options.length && document.activeElement !== sel(k)) sel(k).value = s.voice[k];
+      },
+    };
   }
 
   // ---------- Opciones de listas desplegables (config/options.json) ----------
@@ -843,7 +961,7 @@
   })();
 
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
-  options().then(o => { palette = o.teamColors || []; }).catch(() => {});
+  options().then(o => { palette = o.teamColors || []; speakers = (o.voiceSpeaker && o.voiceSpeaker.options) || []; }).catch(() => {});
 
-  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, closeView, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker };
+  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, closeView, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker, voiceStyleFields, onSpeaking };
 })();

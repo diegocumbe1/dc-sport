@@ -63,6 +63,7 @@
   <div class="box">
     <h2 id="vsTitle">🔊 Un solo dispositivo</h2>
     <p class="muted" id="vsText">Este celular es control, marcador y voz. Conecta el parlante Bluetooth y toca para activar los anuncios.</p>
+    <div class="menu-grid" id="vsVoice"></div>
     <p class="muted" id="vsMusic" style="font-size:14px"></p>
     <div class="row">
       <button class="alt" id="vsSkip" type="button">Sin voz</button>
@@ -91,6 +92,10 @@
       </label>
     </div>
     <p class="muted" id="lastUndo"></p>
+    <!-- Voz de la sala: se puede cambiar en pleno partido y suena así en todas las pantallas. -->
+    <h3 style="margin:10px 0 4px;font-size:15px">🔊 Voz del marcador</h3>
+    <div class="menu-grid" id="mVoice"></div>
+    <div class="row"><button class="alt" id="mVoiceTest" type="button">▶ Probar voz aquí</button></div>
     <!-- Música de Spotify dentro de este celular: así la voz suena encima sin pausarla. -->
     <div class="row">
       <button class="alt" id="mSpotify" type="button">🎵 Conectar Spotify</button>
@@ -224,6 +229,16 @@
   $('mVoicePick').classList.add('hidden');
   $('mVoicePick').onclick = () => DC.voicePicker(state);
 
+  // Voz de la sala (quién habla y si nombra equipos o colores): en el menú y al empezar.
+  const send = cmd => api.send(cmd);
+  const voiceFields = [DC.voiceStyleFields($('mVoice'), send), DC.voiceStyleFields($('vsVoice'), send)];
+  $('mVoiceTest').onclick = () => {
+    if (!state) return;
+    if (!state.voice.enabled) { DC.toast('La voz está apagada para esta sala (Administración → «Voz del marcador»)', 'bad'); return; }
+    DC.unlockAudio(state);
+    DC.announce(state, { ...state.voice, repeat: 1 });
+  };
+
   const api = DC.connect({
     role: 'control',
     team: DC.team,
@@ -247,6 +262,7 @@
         if (prev.currentSet !== s.currentSet && prev.court.join() === [...s.court].reverse().join()) DC.toast('↔ Cambio de lado: revisa los colores antes de sumar');
       }
       render();
+      voiceFields.forEach(f => f.sync(s));
       voice.update(s);
     },
     onConnection: (st, err) => {

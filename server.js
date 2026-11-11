@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const volley = require('./src/volley');
 const { createStore } = require('./src/store');
+const { createNameVoice } = require('./src/voz-nombres');
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PIN = String(process.env.ADMIN_PIN || '1234');
@@ -23,6 +24,7 @@ const io = new Server(server, { pingInterval: 10_000, pingTimeout: 10_000 });
 // Límite de dispositivos por sala: 1 marcador + 2 controles (admin no cuenta).
 const LIMITS = { marcador: 1, control: 2 };
 const ROLES = ['marcador', 'control', 'admin'];
+const MARCADOR_COMMANDS = ['setVoiceStyle', 'setMusic'];
 
 // ---------- Estado por sala + persistencia ----------
 const games = new Map();
@@ -215,7 +217,8 @@ io.on('connection', socket => {
     if (!room) return reply(ack, { ok: false, error: 'No estás en una sala' });
     if (closedMatchRoom(room)) return reply(ack, { ok: false, closed: true, error: 'Este partido ya no está abierto' });
     if (!cmd || typeof cmd !== 'object') return reply(ack, { ok: false, error: 'Comando inválido' });
-    if (socket.data.role === 'marcador') return reply(ack, { ok: false, error: 'El marcador es solo de lectura' });
+    // La pantalla no marca puntos, pero sí configura su sonido: voz y música.
+    if (socket.data.role === 'marcador' && !MARCADOR_COMMANDS.includes(cmd.type)) return reply(ack, { ok: false, error: 'El marcador es solo de lectura' });
     if (cmd.type === 'point' && socket.data.team !== null && socket.data.team !== undefined && cmd.team !== socket.data.team) {
       return reply(ack, { ok: false, error: 'Este control solo maneja a su equipo' });
     }
@@ -288,11 +291,25 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
       overtime: body.overtime ?? draft.config.overtime,
     },
   ];
+  // Música de la pantalla (enlace de YouTube); sin ella se conserva la que tuviera la sala.
+  if (body.music && typeof body.music === 'object' && body.music.youtube !== undefined) {
+    steps.push({ type: 'setMusic', youtube: body.music.youtube });
+  }
   // Orden de saque opcional por equipo; sin él, la sala queda sin orden.
   steps.push({ type: 'setServeOrder', orders: body.serveOrders, first: body.firstServer });
-  // Voz opcional desde el inicio: solo encender/apagar; el resto se ajusta en /admin.
-  if (body.voice && typeof body.voice.enabled === 'boolean') {
-    steps.push({ type: 'setVoice', voice: { ...draft.voice, enabled: body.voice.enabled } });
+  // Voz opcional desde el inicio: encender/apagar, quién habla y si anuncia nombre o color.
+  // El resto (volumen, repeticiones…) se ajusta en /admin.
+  if (body.voice && typeof body.voice === 'object') {
+    const v = body.voice;
+    steps.push({
+      type: 'setVoice',
+      voice: {
+        ...draft.voice,
+        ...(typeof v.enabled === 'boolean' && { enabled: v.enabled }),
+        ...(v.speaker !== undefined && { speaker: v.speaker }),
+        ...(v.announce !== undefined && { announce: v.announce }),
+      },
+    });
   }
   for (const step of steps) {
     const r = volley.apply(draft, step, { admin: true });
@@ -317,6 +334,44 @@ app.delete('/api/rooms/:room', (req, res) => {
   deleteRoom(room);
   store.scheduleSave();
   res.json({ ok: true, existed: true });
+});
+
+// Nombre de un equipo dicho con la voz de la sala (MP3). Solo nombres de equipos que existen en
+// alguna sala: así nadie usa el servidor como sintetizador de voz gratis.
+const nameVoice = createNameVoice({ dir: path.join(path.dirname(DATA_FILE), 'voz-nombres'), speakers: volley.OPTIONS.voiceSpeaker.options });
+const teamNameExists = text => {
+  const t = text.toUpperCase();
+  for (const g of games.values()) if (g.teams.some(x => x.name.toUpperCase() === t)) return true;
+  return false;
+};
+app.get('/api/voz/:speaker', async (req, res) => {
+  const text = typeof req.query.t === 'string' ? req.query.t.trim() : '';
+  if (!nameVoice.has(req.params.speaker)) return res.status(400).json({ error: 'Voz inválida' });
+  if (!text || text.length > 20 || !teamNameExists(text)) return res.status(404).json({ error: 'Nombre desconocido' });
+  try {
+    const mp3 = await nameVoice.get(req.params.speaker, text);
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=2592000' }).send(mp3);
+  } catch (e) {
+    console.warn('[voz]', e.message);
+    res.status(502).json({ error: 'No se pudo generar la voz' });
+  }
+});
+
+// Prueba de voz antes de abrir la sala (desde el torneo): una frase de ejemplo con los nombres
+// reales. Requiere el PIN de administración (x-admin-pin) porque sintetiza texto libre.
+app.post('/api/voz/prueba', express.json({ limit: '2kb' }), async (req, res) => {
+  const pin = checkPin(req.ip, req.get('x-admin-pin'));
+  if (!pin.ok) return res.status(403).json({ error: pin.error });
+  const { speaker, text } = req.body || {};
+  if (!nameVoice.has(speaker)) return res.status(400).json({ error: 'Voz inválida' });
+  if (typeof text !== 'string' || !text.trim() || text.length > 300) return res.status(400).json({ error: 'Texto inválido' });
+  try {
+    const mp3 = await nameVoice.phrase(speaker, text.trim());
+    res.set('Content-Type', 'audio/mpeg').send(mp3);
+  } catch (e) {
+    console.warn('[voz]', e.message);
+    res.status(502).json({ error: 'No se pudo generar la voz' });
+  }
 });
 
 app.get('/api/rooms/:room', (req, res) => {

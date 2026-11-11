@@ -78,6 +78,8 @@
       <label class="field">Anunciar marcador
         <select id="vEnabled"><option value="0">No</option><option value="1">Sí</option></select>
       </label>
+      <label class="field">Voz<select id="vSpeaker"></select></label>
+      <label class="field">Anunciar equipos por<select id="vAnnounce"></select></label>
       <label class="field">Velocidad (<span id="vRateLbl">1</span>×)
         <input id="vRate" type="range" min="0.5" max="2" step="0.1" value="1">
       </label>
@@ -154,7 +156,7 @@
     OPTS = o;
     MAX_TEAMS = Math.max(...o.teamCount.options.map(x => x.value));
     PALETTE = o.teamColors;
-    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['overtime', 'overtime'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang'], ['vPresence', 'voicePresence']]) DC.fillSelect($(id), o[key]);
+    for (const [id, key] of [['pps', 'pointsPerSet'], ['rotation', 'rotation'], ['overtime', 'overtime'], ['vRepeat', 'voiceRepeat'], ['vLang', 'voiceLang'], ['vPresence', 'voicePresence'], ['vSpeaker', 'voiceSpeaker'], ['vAnnounce', 'voiceAnnounce']]) DC.fillSelect($(id), o[key]);
     render(true);
   });
   $('pinRoom').textContent = 'Sala: ' + DC.room;
@@ -274,6 +276,7 @@
       $('vEnabled').value = v.enabled ? '1' : '0'; $('vRate').value = v.rate; $('vRateLbl').textContent = v.rate;
       $('vRepeat').value = v.repeat; $('vInterval').value = v.interval; $('vLang').value = v.lang;
       $('vGain').value = v.gain; $('vGainLbl').textContent = v.gain; $('vPresence').value = v.presence;
+      $('vSpeaker').value = v.speaker; $('vAnnounce').value = v.announce;
     }
     if (fillForms || !document.activeElement?.closest?.('#scoreForm')) {
       $('ptsA').value = s.points[0]; $('ptsB').value = s.points[1];
@@ -299,14 +302,16 @@
     // totalSets 0 = partido abierto (sin «mejor de N»), ver config/options.json.
     run({ type: 'setConfig', pointsPerSet: num('pps'), totalSets: 0, rotation: $('rotation').value, overtime: num('overtime') }, 'Configuración guardada');
   };
-  const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value, gain: num('vGain'), presence: num('vPresence') });
+  const voiceCfg = () => ({ enabled: $('vEnabled').value === '1', rate: num('vRate'), repeat: num('vRepeat'), interval: num('vInterval'), lang: $('vLang').value, gain: num('vGain'), presence: num('vPresence'), speaker: $('vSpeaker').value, announce: $('vAnnounce').value });
   $('vRate').oninput = () => { $('vRateLbl').textContent = $('vRate').value; };
   $('vGain').oninput = () => { $('vGainLbl').textContent = $('vGain').value; };
   $('voiceForm').onsubmit = e => { e.preventDefault(); run({ type: 'setVoice', voice: voiceCfg() }, 'Voz guardada'); };
   $('vTest').onclick = () => {
     if (!state) return;
-    DC.unlockAudio(); // dentro del toque: habilita el audio en móviles
-    if (!DC.announce(state, voiceCfg())) DC.toast('Este navegador no soporta voz', 'bad');
+    // Prueba con lo que está en el formulario (aunque no se haya guardado).
+    const test = { ...state, voice: { ...state.voice, ...voiceCfg() } };
+    DC.unlockAudio(test); // dentro del toque: habilita el audio en móviles
+    if (!DC.announce(test, test.voice)) DC.toast('Este navegador no soporta voz', 'bad');
   };
   $('scoreForm').onsubmit = async e => {
     e.preventDefault();

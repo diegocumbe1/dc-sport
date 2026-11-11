@@ -17,6 +17,8 @@
       <span class="muted" id="presence"></span>
       <span class="conn" id="conn" data-status="connecting">Conectando…</span>
       <button class="alt" id="voiceBtn" type="button">🔇 Voz</button>
+      <button class="alt hidden" id="musicBtn" type="button">🎵 Música</button>
+      <button class="alt" id="soundBtn" type="button" title="Voz y música">⚙ Sonido</button>
       <button class="alt" id="voicePick" type="button" title="Elegir voz de este dispositivo">⚙</button>
       <button class="alt" id="fs" type="button">Pantalla completa</button>
     </div>
@@ -40,6 +42,44 @@
   </div>
   <div class="sb-bottom" id="bottom"></div>
 </div>
+<!-- Reproductor de YouTube (música del torneo). YouTube exige que se vea (mín. 200×200). -->
+<div class="yt-box hidden" id="ytBox"><div id="ytPlayer"></div></div>
+
+<!-- Sonido de la pantalla: voz (de la sala) y música (YouTube). -->
+<div class="overlay hidden" id="sound">
+  <div class="box" style="text-align:left">
+    <h2 style="text-align:center">🔊 Sonido de la pantalla</h2>
+    <h3 class="snd-h">Voz del marcador</h3>
+    <div class="menu-grid" id="sVoice"></div>
+    <div class="row"><button class="alt" id="sVoiceTest" type="button">▶ Probar voz</button></div>
+    <h3 class="snd-h">Música (YouTube / YouTube Music)</h3>
+    <div class="menu-grid" style="grid-template-columns:1fr">
+      <label>Enlace de una lista o canción
+        <input id="sYt" type="url" inputmode="url" placeholder="https://music.youtube.com/playlist?list=…" autocomplete="off">
+      </label>
+    </div>
+    <div class="row">
+      <button class="ok" id="sYtSave" type="button">Guardar música</button>
+      <button class="alt" id="sYtClear" type="button">Quitar</button>
+    </div>
+    <div class="menu-grid">
+      <label><span>Volumen de la música (<b id="sVolLbl">60</b>%)</span>
+        <input id="sVol" type="range" min="5" max="100" step="5" value="60">
+      </label>
+      <label>Cuando habla la voz
+        <select id="sDuck">
+          <option value="0.2">Bajar la música (recomendado)</option>
+          <option value="0.4">Bajarla un poco</option>
+          <option value="0">Pausarla</option>
+          <option value="1">No cambiar</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted" style="font-size:13px">La música suena con esta página abierta y la pantalla encendida (no en segundo plano). Sin YouTube Premium en este navegador pueden salir anuncios. En iPhone, iOS no deja cambiar el volumen desde la página: usa «Pausarla».</p>
+    <div class="row"><button id="sClose" type="button">Cerrar</button></div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="final"><div class="box final-box"><h2 id="finalTitle"></h2><div id="finalBody"></div></div></div>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/common.js"></script>
@@ -99,11 +139,122 @@
   $('voicePick').classList.add('hidden');
   $('voicePick').onclick = () => DC.voicePicker(last);
 
-  DC.connect({
+  // ---------- Sonido: voz de la sala y música de YouTube ----------
+  // Esta pantalla (PC o celular conectado a la TV y al parlante) es la que suena: aquí se
+  // elige la voz, se prueba y se pone la música, que baja sola mientras habla la voz.
+  const api = DC.connect({
     role: 'marcador',
-    onState: render,
+    onState: s => { render(s); voiceFields.sync(s); syncMusic(s); },
     onConnection: (st, err) => DC.renderConnection($('conn'), st, err),
     onPresence: p => { $('presence').textContent = `Controles ${p.controls.length}/2`; },
+  });
+
+  const voiceFields = DC.voiceStyleFields($('sVoice'), cmd => api.send(cmd));
+  $('soundBtn').onclick = () => {
+    $('sYt').value = ytLink(last && last.music && last.music.youtube);
+    $('sound').classList.remove('hidden');
+  };
+  $('sClose').onclick = () => $('sound').classList.add('hidden');
+  $('sound').addEventListener('click', e => { if (e.target === $('sound')) $('sound').classList.add('hidden'); });
+  // Prueba con un marcador de ejemplo (5-3) y los equipos reales.
+  $('sVoiceTest').onclick = () => {
+    if (!last) return;
+    if (!last.voice.enabled) { DC.toast('La voz está apagada para esta sala (Administración → «Voz del marcador»)', 'bad'); return; }
+    const sample = { ...last, phase: 'playing', points: [5, 3], serve: 0, hasServeOrder: false, target: 99 };
+    DC.unlockAudio(last);
+    DC.announce(sample, { ...last.voice, repeat: 1 });
+  };
+  async function saveMusic(youtube) {
+    const res = await api.send({ type: 'setMusic', youtube });
+    if (!res.ok) return DC.toast(res.error || 'No se pudo guardar', 'bad');
+    DC.toast(youtube ? 'Música guardada: toca «🎵 Música» para empezar' : 'Música quitada', 'good');
+  }
+  $('sYtSave').onclick = () => saveMusic($('sYt').value.trim());
+  $('sYtClear').onclick = () => { $('sYt').value = ''; saveMusic(null); };
+
+  // Volumen y forma de bajar la música: preferencias de esta pantalla.
+  const pref = (k, d) => { const v = DC.local.get(k); return v === null ? d : v; };
+  let musicVol = Number(pref('musicVol', 60));
+  let duck = Number(pref('musicDuck', 0.2));
+  $('sVol').value = musicVol; $('sVolLbl').textContent = musicVol;
+  $('sDuck').value = String(duck);
+  $('sVol').oninput = () => { musicVol = Number($('sVol').value); $('sVolLbl').textContent = musicVol; DC.local.set('musicVol', musicVol); if (!speaking) setVol(musicVol); };
+  $('sDuck').onchange = () => { duck = Number($('sDuck').value); DC.local.set('musicDuck', duck); };
+
+  // Reproductor de YouTube (IFrame API). Se crea al tener enlace; suena tras un toque (lo exigen los navegadores).
+  window.__dc = { getVol: () => (playerReady ? player.getVolume() : null), playing: () => musicPlaying };
+  const ytLink = yt => !yt ? '' : yt.list ? `https://www.youtube.com/playlist?list=${yt.list}` : `https://youtu.be/${yt.video}`;
+  let ytApi = null, player = null, playerReady = false, musicKey = null, musicPlaying = false, wantMusic = false;
+  const loadYtApi = () => (ytApi = ytApi || new Promise((resolve, reject) => {
+    window.onYouTubeIframeAPIReady = resolve;
+    const sc = document.createElement('script');
+    sc.src = 'https://www.youtube.com/iframe_api';
+    sc.onerror = () => { ytApi = null; reject(new Error('No se pudo cargar YouTube')); };
+    document.head.appendChild(sc);
+  }));
+  function syncMusic(s) {
+    const yt = s.music && s.music.youtube;
+    const key = yt ? `${yt.video}|${yt.list}` : null;
+    $('musicBtn').classList.toggle('hidden', !key);
+    if (key === musicKey) return;
+    musicKey = key;
+    if (player) { player.destroy(); player = null; playerReady = false; musicPlaying = false; paintMusic(); }
+    $('ytBox').classList.toggle('hidden', !key);
+    if (!key) return;
+    loadYtApi().then(() => {
+      if (musicKey !== key) return;
+      // destroy() reemplaza el div por el iframe: se vuelve a crear el contenedor.
+      $('ytBox').innerHTML = '<div id="ytPlayer"></div>';
+      const vars = { playsinline: 1, rel: 0, modestbranding: 1, controls: 1 };
+      if (yt.list) Object.assign(vars, { listType: 'playlist', list: yt.list });
+      else Object.assign(vars, { loop: 1, playlist: yt.video }); // una canción: se repite
+      player = new YT.Player('ytPlayer', {
+        width: 200, height: 200, videoId: yt.video || undefined, playerVars: vars,
+        events: {
+          onReady: () => { playerReady = true; setVol(musicVol); if (wantMusic) player.playVideo(); },
+          onStateChange: e => { musicPlaying = e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING; paintMusic(); if (musicPlaying) keepAwake(); },
+          onError: () => DC.toast('YouTube no deja reproducir este enlace aquí (prueba otra lista o canción)', 'bad'),
+        },
+      });
+    }).catch(e => DC.toast(e.message, 'bad'));
+  }
+  function paintMusic() {
+    $('musicBtn').textContent = musicPlaying ? '⏸ Música' : '🎵 Música';
+    $('musicBtn').className = musicPlaying ? 'ok' : 'alt';
+  }
+  function playMusic() { wantMusic = true; if (playerReady) player.playVideo(); keepAwake(); }
+  $('musicBtn').onclick = () => {
+    if (musicPlaying) { wantMusic = false; player.pauseVideo(); }
+    else playMusic();
+  };
+  // «Activar voz» también enciende la música (un solo toque para todo).
+  $('voiceBtn').addEventListener('click', () => { if (voice.isOn() && musicKey && !musicPlaying) playMusic(); });
+
+  // Mientras habla la voz la música baja (o se pausa) y luego vuelve con un fundido corto.
+  let speaking = false, fade = null, restore = null, pausedForVoice = false;
+  function setVol(v) { if (playerReady) player.setVolume(Math.round(v)); }
+  function fadeTo(target, ms = 250) {
+    if (!playerReady) return;
+    clearInterval(fade);
+    const from = player.getVolume();
+    const steps = 8;
+    let i = 0;
+    fade = setInterval(() => { i++; setVol(from + (target - from) * (i / steps)); if (i >= steps) clearInterval(fade); }, ms / steps);
+  }
+  DC.onSpeaking(on => {
+    speaking = on;
+    if (!playerReady || duck === 1) return;
+    clearTimeout(restore);
+    if (on) {
+      if (duck === 0) { if (musicPlaying) { pausedForVoice = true; player.pauseVideo(); } }
+      else fadeTo(musicVol * duck, 200);
+    } else {
+      // Espera breve: entre repeticiones o anuncios seguidos la música no sube y baja.
+      restore = setTimeout(() => {
+        if (duck === 0) { if (pausedForVoice) { pausedForVoice = false; player.playVideo(); } }
+        else fadeTo(musicVol, 600);
+      }, 700);
+    }
   });
 
   // Pantalla completa + mantener la pantalla encendida cuando el navegador lo permite.

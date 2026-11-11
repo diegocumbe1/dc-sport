@@ -56,7 +56,11 @@
       <label class="check" style="display:flex;gap:8px;align-items:center;margin-top:12px">
         <input type="checkbox" id="voice" checked> 🔊 Anunciar el marcador por voz (en el marcador o, en modo solo celular, en el control)
       </label>
-      <p class="muted" style="margin:4px 0 0;font-size:13px">Velocidad, repeticiones e intervalo se ajustan en Administración. En el dispositivo que habla hay que tocar «Activar voz» una vez.</p>
+      <div class="grid2" id="voiceFields" style="margin-top:8px">
+        <label class="field">Voz<select id="speaker"></select></label>
+        <label class="field">Anunciar equipos por<select id="announce"></select></label>
+      </div>
+      <p class="muted" style="margin:4px 0 0;font-size:13px">La voz también se cambia durante el partido desde el menú ☰ del control. Velocidad, repeticiones e intervalo se ajustan en Administración. En el dispositivo que habla hay que tocar «Activar voz» una vez.</p>
       <div class="btns"><button type="submit">Crear tablero</button></div>
       <p class="muted" id="setupNote">Si la sala ya tiene un marcador en curso se pedirá el PIN de administración.</p>
     </form>
@@ -199,7 +203,7 @@
     drawFirstServe();
   }
   function saveDraft() {
-    DC.local.set('setup', { count: Number($('count').value), teams: readRows(), pps: $('pps').value, rotation: $('rotation').value, overtime: $('overtime').value, voice: $('voice').checked, firstServe: $('firstServe').value });
+    DC.local.set('setup', { count: Number($('count').value), teams: readRows(), pps: $('pps').value, rotation: $('rotation').value, overtime: $('overtime').value, voice: $('voice').checked, speaker: $('speaker').value, announce: $('announce').value, firstServe: $('firstServe').value });
   }
   DC.options().then(o => {
     PALETTE = o.teamColors;
@@ -207,6 +211,8 @@
     DC.fillSelect($('pps'), o.pointsPerSet, draft.pps);
     DC.fillSelect($('rotation'), o.rotation, draft.rotation);
     DC.fillSelect($('overtime'), o.overtime, draft.overtime);
+    DC.fillSelect($('speaker'), o.voiceSpeaker, draft.speaker);
+    DC.fillSelect($('announce'), o.voiceAnnounce, draft.announce);
     drawRows(Number($('count').value), draft.teams || []);
     drawFirstServe(draft.firstServe);
   });
@@ -239,7 +245,7 @@
       pointsPerSet: Number($('pps').value),
       rotation: $('rotation').value,
       overtime: Number($('overtime').value),
-      voice: { enabled: $('voice').checked },
+      voice: { enabled: $('voice').checked, speaker: $('speaker').value, announce: $('announce').value },
       pin,
     };
     let res;
@@ -317,6 +323,8 @@
       DC.fillSelect($('pps'), o.pointsPerSet);
       DC.fillSelect($('rotation'), o.rotation);
       DC.fillSelect($('overtime'), o.overtime);
+      DC.fillSelect($('speaker'), o.voiceSpeaker);
+      DC.fillSelect($('announce'), o.voiceAnnounce);
       drawRows(Number($('count').value), []);
       drawFirstServe('0');
     });

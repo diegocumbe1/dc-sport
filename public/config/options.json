@@ -274,5 +274,59 @@
         "label": "Español (España)"
       }
     ]
+  },
+  "voiceSpeaker": {
+    "default": "co-f",
+    "options": [
+      {
+        "value": "co-f",
+        "label": "Colombia · mujer (Salomé)",
+        "tts": "es-CO-SalomeNeural",
+        "lang": "es-CO"
+      },
+      {
+        "value": "co-m",
+        "label": "Colombia · hombre (Gonzalo)",
+        "tts": "es-CO-GonzaloNeural",
+        "lang": "es-CO"
+      },
+      {
+        "value": "mx-f",
+        "label": "México · mujer (Dalia)",
+        "tts": "es-MX-DaliaNeural",
+        "lang": "es-MX"
+      },
+      {
+        "value": "mx-m",
+        "label": "México · hombre (Jorge)",
+        "tts": "es-MX-JorgeNeural",
+        "lang": "es-MX"
+      },
+      {
+        "value": "la-f",
+        "label": "Latinoamérica · mujer (Paloma)",
+        "tts": "es-US-PalomaNeural",
+        "lang": "es-US"
+      },
+      {
+        "value": "la-m",
+        "label": "Latinoamérica · hombre (Alonso)",
+        "tts": "es-US-AlonsoNeural",
+        "lang": "es-US"
+      }
+    ]
+  },
+  "voiceAnnounce": {
+    "default": "name",
+    "options": [
+      {
+        "value": "name",
+        "label": "Nombre del equipo"
+      },
+      {
+        "value": "color",
+        "label": "Color del equipo"
+      }
+    ]
   }
 }

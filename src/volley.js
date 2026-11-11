@@ -28,6 +28,9 @@ const MAX_TEAMS = Math.max(...TEAM_COUNTS);
 const VOICE_REPEAT_MAX = Math.max(...values('voiceRepeat'));
 const VOICE_LANGS = values('voiceLang');
 const VOICE_PRESENCE = values('voicePresence');
+// Voz grabada (quién habla) y cómo se nombra a cada equipo en los anuncios (nombre o color).
+const VOICE_SPEAKERS = values('voiceSpeaker');
+const VOICE_ANNOUNCE = values('voiceAnnounce');
 const VOICE_GAIN_MIN = 0.5;
 const VOICE_GAIN_MAX = 2.5;
 const MAX_UNDO = 200;
@@ -45,7 +48,33 @@ const DEFAULT_CONFIG = {
 };
 // gain: volumen de la voz grabada (1 = original). presence: realce de medios-altos en dB
 // para que la voz se distinga sobre la música. Ambos se aplican en el navegador al anunciar.
-const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, gain: 1.5, presence: OPTIONS.voicePresence.default, v: 2 };
+// speaker: voz grabada (options.json → voiceSpeaker). announce: 'name' (nombre del equipo) o 'color'.
+const DEFAULT_VOICE = { enabled: true, rate: 1, repeat: OPTIONS.voiceRepeat.default, interval: 3, lang: OPTIONS.voiceLang.default, gain: 1.5, presence: OPTIONS.voicePresence.default, speaker: OPTIONS.voiceSpeaker.default, announce: OPTIONS.voiceAnnounce.default, v: 2 };
+const speakerLabel = v => OPTIONS.voiceSpeaker.options.find(o => o.value === v).label;
+const announceLabel = v => (v === 'color' ? 'por color' : 'por nombre');
+
+// Música de YouTube / YouTube Music para la pantalla del marcador: enlace → { video, list }.
+// Acepta enlaces de lista, de canción (youtu.be, watch?v=, music.youtube.com) o el id suelto.
+function parseYouTube(raw) {
+  if (typeof raw !== 'string' || !raw.trim() || raw.length > 300) return null;
+  const text = raw.trim();
+  const VIDEO = /^[\w-]{11}$/;
+  const LIST = /^[\w-]{10,64}$/;
+  let url = null;
+  try { url = new URL(/^https?:\/\//i.test(text) ? text : 'https://' + text); } catch {}
+  if (url && /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(url.hostname)) {
+    const list = url.searchParams.get('list');
+    let video = url.searchParams.get('v');
+    if (/youtu\.be$/i.test(url.hostname)) video = url.pathname.slice(1).split('/')[0];
+    const m = url.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+    if (m) video = m[1];
+    const out = { video: VIDEO.test(video || '') ? video : null, list: LIST.test(list || '') ? list : null };
+    return out.video || out.list ? out : null;
+  }
+  if (VIDEO.test(text)) return { video: text, list: null };
+  if (LIST.test(text)) return { video: null, list: text };
+  return null;
+}
 
 const defaultTeam = i => ({ name: PALETTE[i % PALETTE.length].label, color: PALETTE[i % PALETTE.length].value });
 // Nombre por defecto de un equipo sin nombre: el nombre de su color, o «EQUIPO N» si el color no está en la paleta.
@@ -80,6 +109,7 @@ function makeGame(prev) {
     teams,
     config: prev ? { ...prev.config } : { ...DEFAULT_CONFIG },
     voice: prev ? { ...prev.voice } : { ...DEFAULT_VOICE },
+    music: prev && prev.music ? { ...prev.music } : { youtube: null }, // { youtube: { video, list } | null }
     torneo: prev ? prev.torneo === true : false, // sala de un torneo: sin música y el juez no puede borrar el partido
     court: [0, 1],
     queue: teams.map((_, i) => i).slice(2),
@@ -409,8 +439,33 @@ function apply(g, cmd, { admin = false } = {}) {
       const presence = v.presence === undefined ? g.voice.presence : v.presence;
       if (!inRange(gain, VOICE_GAIN_MIN, VOICE_GAIN_MAX)) return fail(`Volumen de la voz entre ${VOICE_GAIN_MIN} y ${VOICE_GAIN_MAX}`);
       if (!VOICE_PRESENCE.includes(presence)) return fail('Presencia de la voz inválida');
-      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang, gain: Math.round(gain * 10) / 10, presence, v: 2 };
+      const speaker = v.speaker === undefined ? g.voice.speaker : v.speaker;
+      const announce = v.announce === undefined ? g.voice.announce : v.announce;
+      if (!VOICE_SPEAKERS.includes(speaker)) return fail('Voz inválida');
+      if (!VOICE_ANNOUNCE.includes(announce)) return fail('Forma de anunciar inválida');
+      g.voice = { enabled: v.enabled, rate: Math.round(v.rate * 10) / 10, repeat: v.repeat, interval: v.interval, lang, gain: Math.round(gain * 10) / 10, presence, speaker, announce, v: 2 };
       addLog(g, `Voz ${v.enabled ? `activada (x${v.repeat}, cada ${v.interval} s, vel. ${g.voice.rate}, volumen ${g.voice.gain}×, presencia ${presence} dB)` : 'desactivada'}`, by);
+      break;
+    }
+    case 'setVoiceStyle': {
+      // Voz y forma de anunciar: sin PIN, antes o durante el partido (no cambia el marcador
+      // ni entra en «deshacer»). Campos omitidos conservan su valor.
+      const speaker = cmd.speaker === undefined ? g.voice.speaker : cmd.speaker;
+      const announce = cmd.announce === undefined ? g.voice.announce : cmd.announce;
+      if (!VOICE_SPEAKERS.includes(speaker)) return fail('Voz inválida');
+      if (!VOICE_ANNOUNCE.includes(announce)) return fail('Forma de anunciar inválida');
+      if (speaker === g.voice.speaker && announce === g.voice.announce) return fail('Sin cambios en la voz');
+      g.voice = { ...g.voice, speaker, announce };
+      addLog(g, `Voz: ${speakerLabel(speaker)}, ${announceLabel(announce)}`, by);
+      break;
+    }
+    case 'setMusic': {
+      // Música de la pantalla (sin PIN): un enlace de YouTube, o vacío para quitarla.
+      const empty = cmd.youtube === null || cmd.youtube === '' || cmd.youtube === undefined;
+      const yt = empty ? null : parseYouTube(cmd.youtube);
+      if (!empty && !yt) return fail('Enlace de YouTube no válido: pega el de una lista o una canción');
+      g.music = { youtube: yt };
+      addLog(g, yt ? 'Música de YouTube configurada' : 'Música quitada', by);
       break;
     }
     case 'setScore': {
@@ -481,6 +536,7 @@ function publicState(room, g) {
     nextIn,
     config: g.config,
     voice: g.voice,
+    music: g.music,
     torneo: g.torneo === true,
     points: g.points,
     serve: g.serve,
@@ -529,10 +585,13 @@ function hydrate(raw) {
   if (!VOICE_LANGS.includes(g.voice.lang)) g.voice.lang = DEFAULT_VOICE.lang;
   if (!inRange(g.voice.gain, VOICE_GAIN_MIN, VOICE_GAIN_MAX)) g.voice.gain = DEFAULT_VOICE.gain;
   if (!VOICE_PRESENCE.includes(g.voice.presence)) g.voice.presence = DEFAULT_VOICE.presence;
+  if (!VOICE_SPEAKERS.includes(g.voice.speaker)) g.voice.speaker = DEFAULT_VOICE.speaker;
+  if (!VOICE_ANNOUNCE.includes(g.voice.announce)) g.voice.announce = DEFAULT_VOICE.announce;
   if (!OVERTIME_OPTIONS.includes(g.config.overtime)) g.config.overtime = DEFAULT_CONFIG.overtime;
+  if (!g.music || typeof g.music !== 'object') g.music = { youtube: null };
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];
   return g;
 }
 
-module.exports = { makeGame, apply, publicState, hydrate, isPristine, targetPoints, OPTIONS };
+module.exports = { makeGame, apply, publicState, hydrate, isPristine, targetPoints, parseYouTube, OPTIONS };

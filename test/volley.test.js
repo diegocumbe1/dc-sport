@@ -509,3 +509,17 @@ test('finalizar: se conserva al guardar y cargar', () => {
   assert.equal(loaded.phase, 'finished');
   assert.deepEqual(loaded.openSet.points, [3, 2]);
 });
+
+test('voz: el control cambia quién habla y nombre/color sin deshacer ni PIN', () => {
+  const g = makeGame();
+  assert.equal(g.voice.speaker, 'co-f');
+  assert.equal(g.voice.announce, 'name');
+  assert.equal(apply(g, { type: 'setVoiceStyle', speaker: 'co-m' }).ok, true);
+  assert.equal(apply(g, { type: 'setVoiceStyle', announce: 'color' }).ok, true);
+  assert.deepEqual([g.voice.speaker, g.voice.announce], ['co-m', 'color']);
+  assert.equal(g.undo.length, 0);
+  assert.equal(apply(g, { type: 'setVoiceStyle', announce: 'grito' }).ok, false);
+  // Salas guardadas antes de esta opción: toman los valores por defecto.
+  const old = hydrate({ ...makeGame(), voice: { enabled: true, rate: 1, repeat: 1, interval: 3, lang: 'es-CO', v: 2 } });
+  assert.deepEqual([old.voice.speaker, old.voice.announce], ['co-f', 'name']);
+});
