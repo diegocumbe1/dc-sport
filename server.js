@@ -324,6 +324,25 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
   res.json({ ok: true, state: stateOf(room) });
 });
 
+// Corrige los nombres de los equipos sin tocar el marcador (PIN en x-admin-pin). Lo usa el
+// torneo cuando la sala se creó con un nombre recortado o el equipo cambió de nombre.
+app.post('/api/rooms/:room/teams', express.json({ limit: '2kb' }), (req, res) => {
+  const room = normRoom(req.params.room);
+  if (!validRoom(room)) return res.status(400).json({ ok: false, error: 'Código de sala inválido' });
+  const pin = checkPin(req.ip, req.get('x-admin-pin'));
+  if (!pin.ok) return res.status(403).json({ ok: false, error: pin.error });
+  const g = games.get(room);
+  if (!g) return res.status(404).json({ ok: false, error: 'La sala no existe' });
+  const names = Array.isArray(req.body && req.body.names) ? req.body.names : [];
+  const teams = g.teams.map((t, i) => ({ name: typeof names[i] === 'string' && names[i].trim() ? names[i] : t.name, color: t.color }));
+  if (teams.every((t, i) => t.name.toUpperCase() === g.teams[i].name)) return res.json({ ok: true, changed: false });
+  const r = volley.apply(g, { type: 'setTeams', teams }, { admin: true });
+  if (!r.ok) return res.status(400).json(r);
+  broadcast(room);
+  store.scheduleSave();
+  res.json({ ok: true, changed: true });
+});
+
 // Borrar una sala del servidor desde la página de inicio (requiere PIN en el header x-admin-pin).
 app.delete('/api/rooms/:room', (req, res) => {
   const room = normRoom(req.params.room);

@@ -179,6 +179,21 @@ test('música: llega desde /setup y la pantalla la cambia, pero no marca puntos'
   assert.equal((await cmd(screen, { type: 'setMusic', youtube: null })).ok, true);
 });
 
+test('corregir nombres de una sala en curso sin perder el marcador', async () => {
+  await setup('nombres1', { teams: [{ name: 'Fenix Squad' }, { name: 'Universidad Surcolom' }], torneo: true });
+  const c = await client('nombres1', 'control');
+  assert.equal((await cmd(c, { type: 'point', team: 1, delta: 1 })).ok, true);
+  const post = (pin, names) => fetch(`${BASE}/api/rooms/nombres1/teams`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ names }),
+  });
+  assert.equal((await post('0000', ['A', 'B'])).status, 403);
+  const r = await (await post('4321', ['Fenix Squad', 'Universidad Surcolombiana'])).json();
+  assert.equal(r.changed, true);
+  const st = await waitState(c, x => x.allTeams[1].name === 'UNIVERSIDAD SURCOLOMBIANA');
+  assert.deepEqual(st.points, [0, 1]);
+  assert.equal((await (await post('4321', ['Fenix Squad', 'Universidad Surcolombiana'])).json()).changed, false);
+});
+
 test('crear tablero: solo es sala de torneo si se pide', async () => {
   assert.equal((await setup('recreativa1', { teams: [{}, {}] })).state.torneo, false);
   assert.equal((await setup('torneo1', { teams: [{}, {}], torneo: true })).state.torneo, true);
