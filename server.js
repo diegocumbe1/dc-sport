@@ -343,6 +343,23 @@ app.post('/api/rooms/:room/teams', express.json({ limit: '2kb' }), (req, res) =>
   res.json({ ok: true, changed: true });
 });
 
+// Reinicia el partido de una sala a 0-0 (PIN en x-admin-pin). Conserva equipos, reglas, voz y
+// música, y las pantallas conectadas ven el 0-0 al instante. Lo usa el torneo al «Reiniciar».
+app.post('/api/rooms/:room/reset', (req, res) => {
+  const room = normRoom(req.params.room);
+  if (!validRoom(room)) return res.status(400).json({ ok: false, error: 'Código de sala inválido' });
+  const pin = checkPin(req.ip, req.get('x-admin-pin'));
+  if (!pin.ok) return res.status(403).json({ ok: false, error: pin.error });
+  const g = games.get(room);
+  if (!g) return res.json({ ok: true, existed: false });
+  const r = volley.apply(g, { type: 'newMatch' }, { admin: true });
+  if (!r.ok) return res.status(400).json(r);
+  g.undo = []; // el reinicio viene del resultado oficial: el juez no lo puede deshacer
+  broadcast(room);
+  store.scheduleSave();
+  res.json({ ok: true, existed: true });
+});
+
 // Borrar una sala del servidor desde la página de inicio (requiere PIN en el header x-admin-pin).
 app.delete('/api/rooms/:room', (req, res) => {
   const room = normRoom(req.params.room);

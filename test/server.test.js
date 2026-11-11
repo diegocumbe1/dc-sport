@@ -194,6 +194,21 @@ test('corregir nombres de una sala en curso sin perder el marcador', async () =>
   assert.equal((await (await post('4321', ['Fenix Squad', 'Universidad Surcolombiana'])).json()).changed, false);
 });
 
+test('reiniciar la sala desde el torneo: 0-0 y conserva equipos y voz', async () => {
+  await setup('reset1', { teams: [{ name: 'Fenix Squad' }, { name: 'Universidad Surcolombiana' }], torneo: true, voice: { speaker: 'la-m' } });
+  const c = await client('reset1', 'control');
+  assert.equal((await cmd(c, { type: 'point', team: 1, delta: 1 })).ok, true);
+  const post = pin => fetch(`${BASE}/api/rooms/reset1/reset`, { method: 'POST', headers: { 'x-admin-pin': pin } });
+  assert.equal((await post('0000')).status, 403);
+  assert.equal((await (await post('4321')).json()).existed, true);
+  const st = await waitState(c, x => x.points[1] === 0 && x.version > 1);
+  assert.deepEqual(st.points, [0, 0]);
+  assert.equal(st.allTeams[1].name, 'UNIVERSIDAD SURCOLOMBIANA');
+  assert.equal(st.voice.speaker, 'la-m');
+  assert.equal(st.canUndo, false);
+  assert.equal((await (await fetch(`${BASE}/api/rooms/no-existe-x/reset`, { method: 'POST', headers: { 'x-admin-pin': '4321' } })).json()).existed, false);
+});
+
 test('crear tablero: solo es sala de torneo si se pide', async () => {
   assert.equal((await setup('recreativa1', { teams: [{}, {}] })).state.torneo, false);
   assert.equal((await setup('torneo1', { teams: [{}, {}], torneo: true })).state.torneo, true);
