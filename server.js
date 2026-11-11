@@ -347,7 +347,7 @@ const teamNameExists = text => {
 app.get('/api/voz/:speaker', async (req, res) => {
   const text = typeof req.query.t === 'string' ? req.query.t.trim() : '';
   if (!nameVoice.has(req.params.speaker)) return res.status(400).json({ error: 'Voz inválida' });
-  if (!text || text.length > 20 || !teamNameExists(text)) return res.status(404).json({ error: 'Nombre desconocido' });
+  if (!text || text.length > 40 || !teamNameExists(text)) return res.status(404).json({ error: 'Nombre desconocido' });
   try {
     const mp3 = await nameVoice.get(req.params.speaker, text);
     res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=2592000' }).send(mp3);

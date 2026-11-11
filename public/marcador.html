@@ -42,8 +42,9 @@
   </div>
   <div class="sb-bottom" id="bottom"></div>
 </div>
-<!-- Reproductor de YouTube (música del torneo). YouTube exige que se vea (mín. 200×200). -->
-<div class="yt-box hidden" id="ytBox"><div id="ytPlayer"></div></div>
+<!-- Reproductor de YouTube (música del torneo). Por defecto solo audio: el video no tapa el
+     marcador. En «⚙ Sonido» → «Mostrar video» se ve en la esquina. -->
+<div class="yt-box solo-audio hidden" id="ytBox" aria-hidden="true"><div id="ytPlayer"></div></div>
 
 <!-- Sonido de la pantalla: voz (de la sala) y música (YouTube). -->
 <div class="overlay hidden" id="sound">
@@ -75,6 +76,7 @@
         </select>
       </label>
     </div>
+    <label class="check-row"><input type="checkbox" id="sVideo"> Mostrar el video de YouTube en la esquina (por defecto solo suena la música)</label>
     <p class="muted" style="font-size:13px">La música suena con esta página abierta y la pantalla encendida (no en segundo plano). Sin YouTube Premium en este navegador pueden salir anuncios. En iPhone, iOS no deja cambiar el volumen desde la página: usa «Pausarla».</p>
     <div class="row"><button id="sClose" type="button">Cerrar</button></div>
   </div>
@@ -180,9 +182,13 @@
   $('sDuck').value = String(duck);
   $('sVol').oninput = () => { musicVol = Number($('sVol').value); $('sVolLbl').textContent = musicVol; DC.local.set('musicVol', musicVol); if (!speaking) setVol(musicVol); };
   $('sDuck').onchange = () => { duck = Number($('sDuck').value); DC.local.set('musicDuck', duck); };
+  // Video visible o solo audio (preferencia de esta pantalla; por defecto solo audio).
+  const paintVideo = () => $('ytBox').classList.toggle('solo-audio', !$('sVideo').checked);
+  $('sVideo').checked = !!pref('musicVideo', false);
+  paintVideo();
+  $('sVideo').onchange = () => { DC.local.set('musicVideo', $('sVideo').checked); paintVideo(); };
 
   // Reproductor de YouTube (IFrame API). Se crea al tener enlace; suena tras un toque (lo exigen los navegadores).
-  window.__dc = { getVol: () => (playerReady ? player.getVolume() : null), playing: () => musicPlaying };
   const ytLink = yt => !yt ? '' : yt.list ? `https://www.youtube.com/playlist?list=${yt.list}` : `https://youtu.be/${yt.video}`;
   let ytApi = null, player = null, playerReady = false, musicKey = null, musicPlaying = false, wantMusic = false;
   const loadYtApi = () => (ytApi = ytApi || new Promise((resolve, reject) => {

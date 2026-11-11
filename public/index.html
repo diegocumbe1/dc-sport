@@ -192,7 +192,7 @@
       const t = prev[i] || {};
       const color = t.color || PALETTE[i % PALETTE.length].value;
       return `<div class="field team-field"><span>Equipo ${i + 1}</span>
-        <span class="team-row"><input class="t-name" maxlength="20" data-fallback="EQUIPO ${i + 1}" value="${DC.esc(t.name || '')}">
+        <span class="team-row"><input class="t-name" maxlength="40" data-fallback="EQUIPO ${i + 1}" value="${DC.esc(t.name || '')}">
         ${DC.colorSelect(PALETTE, color)}</span>
         <span class="serve-label">Orden de saque (opcional)</span>
         <span class="serve-boxes">${drawServeBoxes(i, Array.isArray(t.serve) ? t.serve : [])}</span></div>`;
