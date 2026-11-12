@@ -767,6 +767,47 @@
     };
   }
 
+  // Controles de la música de la sala: volumen, pausa y cuánto baja al hablar la voz. Valen para
+  // todas las pantallas (se guardan en la sala) y se pueden usar desde el admin, el control o la TV.
+  // `send` es api.send de DC.connect. Devuelve { sync(s) } para llamar en cada estado.
+  function musicControlFields(container, send) {
+    container.innerHTML = `<label><span>Volumen de la música (<b data-mc="lbl">60</b>%)</span>
+        <input data-mc="vol" type="range" min="5" max="100" step="5" value="60"></label>
+      <label>Cuando habla la voz <select data-mc="duck">
+        <option value="0.2">Bajar la música (recomendado)</option>
+        <option value="0.4">Bajarla un poco</option>
+        <option value="0">Pausarla</option>
+        <option value="1">No cambiar</option></select></label>
+      <button type="button" class="alt" data-mc="pause" style="grid-column:1/-1">⏸ Pausar música</button>`;
+    const q = k => container.querySelector(`[data-mc="${k}"]`);
+    let current = null, timer = null;
+    const push = async (cmd, okText) => {
+      const res = await send({ type: 'setMusicControl', ...cmd });
+      if (res.ok) { if (okText) toast(okText, 'good'); }
+      else toast(res.error || 'No se pudo cambiar la música', 'bad');
+    };
+    // El volumen se manda al soltar o tras una pausa corta, no en cada pixel del deslizador.
+    q('vol').addEventListener('input', () => {
+      q('lbl').textContent = q('vol').value;
+      clearTimeout(timer);
+      timer = setTimeout(() => push({ volume: Number(q('vol').value) }), 250);
+    });
+    q('duck').addEventListener('change', () => push({ duck: Number(q('duck').value) }, 'Listo'));
+    q('pause').addEventListener('click', () => push({ paused: !(current && current.paused) }));
+    return {
+      sync(s) {
+        const m = s && s.music;
+        container.classList.toggle('hidden', !(m && m.youtube));
+        if (!m || !m.youtube) return;
+        current = m;
+        if (document.activeElement !== q('vol')) { q('vol').value = m.volume; q('lbl').textContent = m.volume; }
+        if (document.activeElement !== q('duck')) q('duck').value = String(m.duck);
+        q('pause').textContent = m.paused ? '▶ Reanudar música' : '⏸ Pausar música';
+        q('pause').className = m.paused ? 'ok' : 'alt';
+      },
+    };
+  }
+
   // ---------- Opciones de listas desplegables (config/options.json) ----------
   let optionsPromise = null;
   const options = () => (optionsPromise = optionsPromise || fetch('/config/options.json').then(r => r.json()));
@@ -963,5 +1004,5 @@
   // Paleta para la voz grabada (el anuncio usa el nombre del color de cada equipo).
   options().then(o => { palette = o.teamColors || []; speakers = (o.voiceSpeaker && o.voiceSpeaker.options) || []; }).catch(() => {});
 
-  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, closeView, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker, voiceStyleFields, onSpeaking };
+  window.DC = { standingsTable, finalTitle, finalHtml, room, team, cleanRoom, esc, connect, closeView, toast, renderConnection, urlFor, params, speak, stopSpeaking, voiceSupported, announce, unlockAudio, scoreClips, clipBlob: buildClip, spotify, local, clearLocalData, options, fillSelect, colorLabel, colorSelect, bindColorRows, confirmModal, listVoices, pickVoice, onVoicesReady, scoreSpeech, targetText, standings, voiceAnnouncer, voicePicker, voiceStyleFields, musicControlFields, onSpeaking };
 })();

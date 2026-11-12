@@ -63,19 +63,8 @@
       <button class="ok" id="sYtSave" type="button">Guardar música</button>
       <button class="alt" id="sYtClear" type="button">Quitar</button>
     </div>
-    <div class="menu-grid">
-      <label><span>Volumen de la música (<b id="sVolLbl">60</b>%)</span>
-        <input id="sVol" type="range" min="5" max="100" step="5" value="60">
-      </label>
-      <label>Cuando habla la voz
-        <select id="sDuck">
-          <option value="0.2">Bajar la música (recomendado)</option>
-          <option value="0.4">Bajarla un poco</option>
-          <option value="0">Pausarla</option>
-          <option value="1">No cambiar</option>
-        </select>
-      </label>
-    </div>
+    <!-- Volumen, pausa y bajar al hablar: son de la sala; también se cambian desde Administración y el control. -->
+    <div class="menu-grid" id="sMusicCtl"></div>
     <label class="check-row"><input type="checkbox" id="sVideo"> Mostrar el video de YouTube en la esquina (por defecto solo suena la música)</label>
     <p class="muted" style="font-size:13px">La música suena con esta página abierta y la pantalla encendida (no en segundo plano). Sin YouTube Premium en este navegador pueden salir anuncios. En iPhone, iOS no deja cambiar el volumen desde la página: usa «Pausarla».</p>
     <div class="row"><button id="sClose" type="button">Cerrar</button></div>
@@ -174,14 +163,11 @@
   $('sYtSave').onclick = () => saveMusic($('sYt').value.trim());
   $('sYtClear').onclick = () => { $('sYt').value = ''; saveMusic(null); };
 
-  // Volumen y forma de bajar la música: preferencias de esta pantalla.
+  // Volumen, pausa y forma de bajar la música: ajustes de la sala (se cambian desde cualquier vista).
   const pref = (k, d) => { const v = DC.local.get(k); return v === null ? d : v; };
-  let musicVol = Number(pref('musicVol', 60));
-  let duck = Number(pref('musicDuck', 0.2));
-  $('sVol').value = musicVol; $('sVolLbl').textContent = musicVol;
-  $('sDuck').value = String(duck);
-  $('sVol').oninput = () => { musicVol = Number($('sVol').value); $('sVolLbl').textContent = musicVol; DC.local.set('musicVol', musicVol); if (!speaking) setVol(musicVol); };
-  $('sDuck').onchange = () => { duck = Number($('sDuck').value); DC.local.set('musicDuck', duck); };
+  let musicVol = 60;
+  let duck = 0.2;
+  const musicFields = DC.musicControlFields($('sMusicCtl'), cmd => api.send(cmd));
   // Video visible o solo audio (preferencia de esta pantalla; por defecto solo audio).
   const paintVideo = () => $('ytBox').classList.toggle('solo-audio', !$('sVideo').checked);
   $('sVideo').checked = !!pref('musicVideo', false);
@@ -198,7 +184,21 @@
     sc.onerror = () => { ytApi = null; reject(new Error('No se pudo cargar YouTube')); };
     document.head.appendChild(sc);
   }));
+  let remotePaused = false, resumeAfter = false;
+  function applyMusicControl(s) {
+    const m = s.music;
+    if (!m) return;
+    musicFields.sync(s);
+    musicVol = m.volume; duck = m.duck;
+    if (!speaking) setVol(musicVol);
+    if (m.paused !== remotePaused) {
+      remotePaused = m.paused;
+      if (m.paused) { if (musicPlaying && player) { resumeAfter = true; wantMusic = false; player.pauseVideo(); } }
+      else if ((resumeAfter || voice.isOn()) && musicKey) { resumeAfter = false; playMusic(); }
+    }
+  }
   function syncMusic(s) {
+    applyMusicControl(s);
     const yt = s.music && s.music.youtube;
     const key = yt ? `${yt.video}|${yt.list}` : null;
     $('musicBtn').classList.toggle('hidden', !key);
@@ -230,8 +230,8 @@
   }
   function playMusic() { wantMusic = true; if (playerReady) player.playVideo(); keepAwake(); }
   $('musicBtn').onclick = () => {
-    if (musicPlaying) { wantMusic = false; player.pauseVideo(); }
-    else playMusic();
+    if (musicPlaying) { wantMusic = false; player.pauseVideo(); api.send({ type: 'setMusicControl', paused: true }); }
+    else { playMusic(); api.send({ type: 'setMusicControl', paused: false }); }
   };
   // «Activar voz» también enciende la música (un solo toque para todo).
   $('voiceBtn').addEventListener('click', () => { if (voice.isOn() && musicKey && !musicPlaying) playMusic(); });

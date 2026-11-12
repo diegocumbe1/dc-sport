@@ -25,7 +25,7 @@ const io = new Server(server, { pingInterval: 10_000, pingTimeout: 10_000 });
 // voz solo suena donde se activa) + 2 controles. El admin no cuenta.
 const LIMITS = { marcador: 4, control: 2 };
 const ROLES = ['marcador', 'control', 'admin'];
-const MARCADOR_COMMANDS = ['setVoiceStyle', 'setMusic'];
+const MARCADOR_COMMANDS = ['setVoiceStyle', 'setMusic', 'setMusicControl'];
 
 // ---------- Estado por sala + persistencia ----------
 const games = new Map();

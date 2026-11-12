@@ -115,6 +115,9 @@
     <h3 style="margin:10px 0 4px;font-size:15px">🔊 Voz del marcador</h3>
     <div class="menu-grid" id="mVoice"></div>
     <div class="row"><button class="alt" id="mVoiceTest" type="button">▶ Probar voz aquí</button></div>
+    <!-- Música de la sala (si hay): volumen, pausa y cuánto baja al hablar la voz. -->
+    <h3 style="margin:10px 0 4px;font-size:15px" id="mMusicTitle" class="hidden">🎵 Música de la pantalla</h3>
+    <div class="menu-grid hidden" id="mMusic"></div>
     <!-- Música de Spotify dentro de este celular: así la voz suena encima sin pausarla. -->
     <div class="row">
       <button class="alt" id="mSpotify" type="button">🎵 Conectar Spotify</button>
@@ -251,6 +254,7 @@
   // Voz de la sala (quién habla y si nombra equipos o colores): en el menú y al empezar.
   const send = cmd => api.send(cmd);
   const voiceFields = [DC.voiceStyleFields($('mVoice'), send), DC.voiceStyleFields($('vsVoice'), send)];
+  const musicFields = DC.musicControlFields($('mMusic'), send);
   $('mVoiceTest').onclick = () => {
     if (!state) return;
     if (!state.voice.enabled) { DC.toast('La voz está apagada para esta sala (Administración → «Voz del marcador»)', 'bad'); return; }
@@ -282,6 +286,8 @@
       }
       render();
       voiceFields.forEach(f => f.sync(s));
+      musicFields.sync(s);
+      $('mMusicTitle').classList.toggle('hidden', !(s.music && s.music.youtube));
       voice.update(s);
     },
     onConnection: (st, err) => {

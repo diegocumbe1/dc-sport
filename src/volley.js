@@ -31,6 +31,8 @@ const VOICE_PRESENCE = values('voicePresence');
 // Voz grabada (quién habla) y cómo se nombra a cada equipo en los anuncios (nombre o color).
 const VOICE_SPEAKERS = values('voiceSpeaker');
 const VOICE_ANNOUNCE = values('voiceAnnounce');
+const MUSIC_DUCKS = [0, 0.2, 0.4, 1]; // cuánto baja la música al hablar la voz (0 = pausarla, 1 = no cambiar)
+const DEFAULT_MUSIC = { youtube: null, volume: 60, duck: 0.2, paused: false };
 const VOICE_GAIN_MIN = 0.5;
 const VOICE_GAIN_MAX = 2.5;
 const MAX_UNDO = 200;
@@ -109,7 +111,7 @@ function makeGame(prev) {
     teams,
     config: prev ? { ...prev.config } : { ...DEFAULT_CONFIG },
     voice: prev ? { ...prev.voice } : { ...DEFAULT_VOICE },
-    music: prev && prev.music ? { ...prev.music } : { youtube: null }, // { youtube: { video, list } | null }
+    music: prev && prev.music ? { ...DEFAULT_MUSIC, ...prev.music } : { ...DEFAULT_MUSIC }, // youtube: { video, list } | null; volume 5-100; duck; paused
     torneo: prev ? prev.torneo === true : false, // sala de un torneo: sin música y el juez no puede borrar el partido
     court: [0, 1],
     queue: teams.map((_, i) => i).slice(2),
@@ -489,8 +491,28 @@ function apply(g, cmd, { admin = false } = {}) {
       const empty = cmd.youtube === null || cmd.youtube === '' || cmd.youtube === undefined;
       const yt = empty ? null : parseYouTube(cmd.youtube);
       if (!empty && !yt) return fail('Enlace de YouTube no válido: pega el de una lista o una canción');
-      g.music = { youtube: yt };
+      g.music = { ...DEFAULT_MUSIC, ...g.music, youtube: yt };
       addLog(g, yt ? 'Música de YouTube configurada' : 'Música quitada', by);
+      break;
+    }
+    case 'setMusicControl': {
+      // Volumen, pausa y «bajar al hablar» de la música, desde cualquier vista (sin PIN).
+      // Es de toda la sala: lo aplican las pantallas de marcador que tienen música.
+      const m = { ...DEFAULT_MUSIC, ...g.music };
+      if (cmd.volume !== undefined) {
+        if (!Number.isInteger(cmd.volume) || cmd.volume < 5 || cmd.volume > 100) return fail('Volumen de la música entre 5 y 100');
+        m.volume = cmd.volume;
+      }
+      if (cmd.duck !== undefined) {
+        if (!MUSIC_DUCKS.includes(cmd.duck)) return fail('Opción de bajar la música inválida');
+        m.duck = cmd.duck;
+      }
+      if (cmd.paused !== undefined) {
+        if (typeof cmd.paused !== 'boolean') return fail('Estado de la música inválido');
+        m.paused = cmd.paused;
+      }
+      g.music = m;
+      if (cmd.paused !== undefined) addLog(g, m.paused ? 'Música en pausa' : 'Música reanudada', by);
       break;
     }
     case 'setScore': {
@@ -616,7 +638,10 @@ function hydrate(raw) {
   if (!VOICE_SPEAKERS.includes(g.voice.speaker)) g.voice.speaker = DEFAULT_VOICE.speaker;
   if (!VOICE_ANNOUNCE.includes(g.voice.announce)) g.voice.announce = DEFAULT_VOICE.announce;
   if (!OVERTIME_OPTIONS.includes(g.config.overtime)) g.config.overtime = DEFAULT_CONFIG.overtime;
-  if (!g.music || typeof g.music !== 'object') g.music = { youtube: null };
+  g.music = { ...DEFAULT_MUSIC, ...(g.music && typeof g.music === 'object' ? g.music : {}) };
+  if (!Number.isInteger(g.music.volume) || g.music.volume < 5 || g.music.volume > 100) g.music.volume = DEFAULT_MUSIC.volume;
+  if (!MUSIC_DUCKS.includes(g.music.duck)) g.music.duck = DEFAULT_MUSIC.duck;
+  g.music.paused = g.music.paused === true;
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];
   return g;

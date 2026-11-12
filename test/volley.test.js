@@ -567,3 +567,21 @@ test('voz: el control cambia quién habla y nombre/color sin deshacer ni PIN', (
   const old = hydrate({ ...makeGame(), voice: { enabled: true, rate: 1, repeat: 1, interval: 3, lang: 'es-CO', v: 2 } });
   assert.deepEqual([old.voice.speaker, old.voice.announce], ['co-f', 'name']);
 });
+
+test('música: volumen, pausa y bajar al hablar se guardan en la sala y se validan', () => {
+  const g = makeGame();
+  assert.deepEqual([g.music.volume, g.music.duck, g.music.paused], [60, 0.2, false]);
+  apply(g, { type: 'setMusic', youtube: 'dQw4w9WgXcQ' });
+  assert.equal(apply(g, { type: 'setMusicControl', volume: 35, duck: 0, paused: true }).ok, true);
+  assert.deepEqual([g.music.volume, g.music.duck, g.music.paused], [35, 0, true]);
+  assert.equal(apply(g, { type: 'setMusic', youtube: 'dQw4w9WgXcQ' }).ok, true);
+  assert.equal(g.music.volume, 35, 'cambiar el enlace no borra el volumen');
+  assert.equal(apply(g, { type: 'setMusicControl', volume: 2 }).ok, false);
+  assert.equal(apply(g, { type: 'setMusicControl', volume: 101 }).ok, false);
+  assert.equal(apply(g, { type: 'setMusicControl', duck: 0.7 }).ok, false);
+  assert.equal(apply(g, { type: 'setMusicControl', paused: 'si' }).ok, false);
+  const loaded = hydrate(JSON.parse(JSON.stringify(g)));
+  assert.equal(loaded.music.volume, 35);
+  assert.equal(hydrate({ music: { youtube: null } }).music.volume, 60, 'salas guardadas antes: valores por defecto');
+  assert.equal(makeGame(g).music.volume, 35, 'nuevo partido conserva la música');
+});

@@ -101,6 +101,12 @@
     <p class="muted"><b>Volumen y presencia</b> solo afectan a la voz del marcador (no a la música ni al ding). Si la voz se pierde con la música, sube primero la <b>presencia</b> (más clara sin sonar ronca) y luego el volumen. Pruébalo con «Probar aquí» y guarda: el cambio llega en vivo a la pantalla que anuncia.</p>
   </section>
 
+  <section class="card hidden" id="musicCard">
+    <h2>Música de la pantalla</h2>
+    <div class="menu-grid" id="musicCtl"></div>
+    <p class="muted">Vale para todas las pantallas de la sala y llega en vivo, sin tocar la TV. Para que suene, alguien debe haber tocado «🎵 Música» una vez en esa pantalla (lo exige el navegador). En iPhone o iPad el volumen no se puede cambiar desde la página: usa pausar o reanudar.</p>
+  </section>
+
   <section class="card">
     <h2>Corregir marcador</h2>
     <form id="scoreForm">
@@ -259,6 +265,8 @@
       : '';
     $('lblA').textContent = 'Puntos ' + A.name + ' (izq.)';
     $('lblB').textContent = 'Puntos ' + B.name + ' (der.)';
+    musicCtl.sync(s);
+    $('musicCard').classList.toggle('hidden', !(s.music && s.music.youtube));
     $('undo').disabled = !s.canUndo;
     $('undo').title = s.lastUndo ? 'Revierte: ' + s.lastUndo : '';
     $('log').innerHTML = s.log.slice().reverse().map(l =>
@@ -284,6 +292,8 @@
         `<label class="field">${DC.esc(t.name)}<input class="set-in" type="number" min="0" max="${s.rotationMode ? 99 : s.setsToWin}" value="${s.teamSets[i]}" required></label>`).join('');
     }
   }
+
+  const musicCtl = DC.musicControlFields($('musicCtl'), cmd => api.send(cmd));
 
   async function run(cmd, okText) {
     const res = await api.send(cmd);
