@@ -355,8 +355,11 @@ function apply(g, cmd, { admin = false } = {}) {
       addLog(g, `Equipos: ${g.teams.map(t => t.name).join(', ')}`, by);
       break;
     }
+    // `serveOrder` lo usa el juez desde su enlace: sin PIN, pero solo antes del primer punto
+    // (la misma guarda de abajo). `setServeOrder` sigue pidiendo PIN (creación del tablero).
+    case 'serveOrder':
     case 'setServeOrder': {
-      if (!admin) return fail('Requiere PIN de administración');
+      if (cmd.type === 'setServeOrder' && !admin) return fail('Requiere PIN de administración');
       if (!isPristine(g)) return fail('El orden de saque se define antes de iniciar el partido');
       const orders = cmd.orders === undefined ? [] : cmd.orders;
       const first = cmd.first === undefined ? 0 : cmd.first;
@@ -541,6 +544,8 @@ function publicState(room, g) {
     points: g.points,
     serve: g.serve,
     hasServeOrder: hasServeOrder(g),
+    pristine: isPristine(g),
+    firstServer: g.firstServer,
     serveNumber: serverNumber(g),
     currentSet: g.currentSet,
     target: targetPoints(g),

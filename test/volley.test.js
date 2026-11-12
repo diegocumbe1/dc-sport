@@ -451,6 +451,16 @@ test('orden de saque: validaciones y permisos', () => {
   assert.equal(set([[1]], 0), false, 'solo antes de iniciar');
 });
 
+test('orden de saque: el juez lo define sin PIN solo antes de iniciar', () => {
+  const g = makeGame();
+  assert.equal(apply(g, { type: 'serveOrder', orders: [[3, 7, 9], [2, 4]], first: 1 }, {}).ok, true);
+  assert.deepEqual(g.teams[0].serveOrder, [3, 7, 9]);
+  assert.equal(g.setServer, 1);
+  assert.equal(apply(g, { type: 'serveOrder', orders: [[1]], first: 0 }, {}).ok, true, 'se puede corregir mientras 0-0');
+  pt(g, 0);
+  assert.equal(apply(g, { type: 'serveOrder', orders: [[1]], first: 0 }, {}).ok, false, 'ya inició');
+});
+
 test('orden de saque: se conserva al guardar y cargar, y al renombrar equipos', () => {
   const g = withOrder();
   pt(g, 1);
