@@ -47,6 +47,7 @@
     <button class="alt" id="jSwap" type="button">⇄ Invertir lados</button>
     <button class="ok" id="jUndo" type="button">↶ Deshacer</button>
     <button class="alt hidden" id="jServe" type="button" style="grid-column:1/-1">🏐 Orden de saque</button>
+    <button class="alt hidden" id="jCambiar" type="button" style="grid-column:1/-1">🔁 Cambiar de partido</button>
   </div>
 </div>
 
@@ -75,6 +76,16 @@
 </div>
 
 <!-- Orden de saque: se define antes del primer punto (el juez o quien tenga el control). -->
+<!-- Elegir el siguiente partido (o cambiar el cargado si aún no empezó): solo los próximos 3 de la cancha. -->
+<div class="overlay hidden" id="nextOv">
+  <div class="box">
+    <h2 id="nextTitle">Siguiente partido</h2>
+    <p class="muted" id="nextHelp" style="font-size:14px;margin:0 0 10px">Elige cuál sigue en esta cancha.</p>
+    <div id="nextList" style="display:grid;gap:8px"></div>
+    <div class="row"><button class="alt" id="nextCancel" type="button">Cancelar</button></div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="serveOv">
   <div class="box">
     <h2 id="serveTitle">🏐 Orden de saque</h2>
@@ -322,6 +333,8 @@
     const serveEditable = s.phase === 'playing' || s.phase === 'setOver';
     $('mServeOrder').classList.toggle('hidden', !serveEditable);
     $('jServe').classList.toggle('hidden', !(judge && serveEditable));
+    // Sala de cancha con el partido cargado aún sin un punto: el juez puede cambiarlo por otro de los próximos.
+    $('jCambiar').classList.toggle('hidden', !(judge && s.canal && s.pristine && s.phase === 'playing'));
     $('jServe').textContent = !s.hasServeOrder ? '🏐 Marcar orden de saque' : '🏐 Saque: cambiar jugador u orden';
     if (!serveEditable) $('serveOv').classList.add('hidden');
     // Al abrir el enlace del juez con el partido sin empezar, se ofrece una vez.
@@ -492,21 +505,43 @@
     else DC.toast(res.error, 'bad');
     return res;
   }
-  // Sala fija de la cancha: pide a la plataforma cargar el siguiente partido SIN cambiar de enlace.
-  // La plataforma guarda antes lo que reportó el juez; las pantallas se actualizan solas.
-  async function siguientePartido(btn) {
-    if (!confirm('¿Cargar el siguiente partido? Este queda guardado para el organizador.')) return;
-    btn.disabled = true;
-    btn.textContent = 'Cargando…';
+  // Sala fija de la cancha: el juez elige entre los PRÓXIMOS 3 partidos y la plataforma lo carga en esta
+  // misma sala, SIN cambiar de enlace. La plataforma guarda antes lo que reportó el juez.
+  const cerrarNext = () => $('nextOv').classList.add('hidden');
+  $('nextCancel').onclick = cerrarNext;
+  async function cargarPartido(id, texto) {
+    $('nextList').innerHTML = '<p class="muted">Cargando…</p>';
     try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(DC.room)}/siguiente`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' }, body: '{}' }).then(r => r.json());
-      if (res.ok) DC.toast(res.partido ? `Siguiente: ${res.partido}` : 'Siguiente partido cargado', 'good');
-      else { DC.toast(res.error || 'No se pudo cargar el siguiente partido', 'bad'); btn.disabled = false; btn.textContent = 'Siguiente partido →'; }
+      const res = await fetch(`/api/rooms/${encodeURIComponent(DC.room)}/siguiente`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' }, body: JSON.stringify({ encuentroId: id }) }).then(r => r.json());
+      if (res.ok) { cerrarNext(); DC.toast(res.partido ? `Cargado: ${res.partido}` : 'Partido cargado', 'good'); }
+      else { DC.toast(res.error || 'No se pudo cargar el partido', 'bad'); cerrarNext(); }
     } catch {
-      DC.toast('Sin conexión: no se pudo cargar el siguiente partido', 'bad');
-      btn.disabled = false; btn.textContent = 'Siguiente partido →';
+      DC.toast('Sin conexión: no se pudo cargar el partido', 'bad');
+      cerrarNext();
     }
   }
+  async function abrirSiguiente(titulo, ayuda) {
+    $('nextTitle').textContent = titulo;
+    $('nextHelp').textContent = ayuda;
+    $('nextList').innerHTML = '<p class="muted">Buscando partidos…</p>';
+    $('nextOv').classList.remove('hidden');
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(DC.room)}/pendientes`, { headers: { 'ngrok-skip-browser-warning': '1' } }).then(r => r.json());
+      if (!res.ok) { $('nextList').innerHTML = `<p class="muted">${DC.esc(res.error || 'No se pudo consultar')}</p>`; return; }
+      if (!res.partidos.length) { $('nextList').innerHTML = '<p class="muted">No hay más partidos programados en esta cancha por ahora.</p>'; return; }
+      const hora = iso => iso ? new Date(iso).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }) : '';
+      $('nextList').innerHTML = res.partidos.map((p, i) => `<button type="button" class="${i === 0 ? 'ok' : 'alt'}" data-id="${DC.esc(p.id)}" data-t="${DC.esc(p.texto)}" style="text-align:left;padding:12px 14px">${i === 0 ? '<small style="display:block;opacity:.8">Sugerido · por hora</small>' : ''}<b>${DC.esc(p.texto)}</b><small style="display:block;opacity:.75">${hora(p.hora)}</small></button>`).join('');
+    } catch {
+      $('nextList').innerHTML = '<p class="muted">Sin conexión. Inténtalo de nuevo.</p>';
+    }
+  }
+  $('nextList').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    if (confirm(`¿Cargar ${b.dataset.t}?`)) cargarPartido(b.dataset.id, b.dataset.t);
+  });
+  $('jCambiar').onclick = () => abrirSiguiente('Cambiar de partido', 'El partido cargado todavía no empezó. Elige cuál se juega ahora; el otro queda para después.');
+  const siguientePartido = () => abrirSiguiente('Siguiente partido', 'Elige cuál sigue en esta cancha. Si no cambias nada, el sugerido es el siguiente por hora.');
   const undo = () => { cancelPending(); return run({ type: 'undo' }, 'Acción deshecha'); };
   const resetMatch = () => { if (confirm('¿Reiniciar el partido completo? Se ponen en 0 puntos y sets de ambos equipos.')) run({ type: 'resetMatch' }, 'Partido reiniciado'); };
   // Un set a medias no cuenta: se avisa antes de cerrar. Se puede reanudar con deshacer.
@@ -530,7 +565,7 @@
     } else if (act === 'undo') undo();
     else if (act === 'reset') resetMatch();
     else if (act === 'end') endMatch();
-    else if (act === 'siguiente') siguientePartido(e.target);
+    else if (act === 'siguiente') siguientePartido();
     else if (act === 'exit') DC.closeView('Listo', 'El organizador confirmará el resultado en el torneo. Ya puedes cerrar esta ventana. Si hay que corregir algo, vuelve a abrir tu enlace.');
     else if (act === 'home') location.href = $('homeBtn').href;
   });

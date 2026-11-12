@@ -343,16 +343,19 @@ app.post('/api/rooms/:room/siguiente', express.json({ limit: '1kb' }), async (re
   if (!g) return res.status(404).json({ ok: false, error: 'La sala no existe' });
   if (!g.canal) return res.status(400).json({ ok: false, error: 'Esta sala no es de una cancha del torneo' });
   if (!PLATAFORMA_URL) return res.status(503).json({ ok: false, error: 'La plataforma no está configurada en el marcador (PLATAFORMA_URL).' });
-  if (g.phase !== 'matchOver' && g.phase !== 'finished') {
+  // Se puede pasar al siguiente con el partido terminado, o cambiar el cargado si aún no tiene un solo punto.
+  const terminado = g.phase === 'matchOver' || g.phase === 'finished';
+  if (!terminado && !volley.isPristine(g)) {
     return res.status(409).json({ ok: false, error: 'El partido sigue en juego: termínalo antes de pasar al siguiente.' });
   }
+  const encuentroId = req.body && typeof req.body.encuentroId === 'string' && /^[0-9a-f-]{36}$/.test(req.body.encuentroId) ? req.body.encuentroId : undefined;
   if (siguienteEnCurso.has(room)) return res.status(429).json({ ok: false, error: 'Ya se está cargando el siguiente partido…' });
   siguienteEnCurso.add(room);
   try {
     const r = await fetch(`${PLATAFORMA_URL}/api/canal/siguiente`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-pin': ADMIN_PIN },
-      body: JSON.stringify({ sala: room }),
+      body: JSON.stringify({ sala: room, ...(encuentroId ? { encuentroId } : {}) }),
       signal: AbortSignal.timeout(15000),
     });
     const body = await r.json().catch(() => ({}));
@@ -363,6 +366,25 @@ app.post('/api/rooms/:room/siguiente', express.json({ limit: '1kb' }), async (re
     res.status(502).json({ ok: false, error: 'No se pudo contactar a la plataforma.' });
   } finally {
     siguienteEnCurso.delete(room);
+  }
+});
+
+// Próximos partidos de la cancha que el juez puede elegir (la plataforma manda hasta 3, por hora).
+app.get('/api/rooms/:room/pendientes', async (req, res) => {
+  const room = normRoom(req.params.room);
+  if (!validRoom(room)) return res.status(400).json({ ok: false, error: 'Código de sala inválido' });
+  const g = games.get(room);
+  if (!g || !g.canal) return res.status(404).json({ ok: false, error: 'Esta sala no es de una cancha del torneo' });
+  if (!PLATAFORMA_URL) return res.status(503).json({ ok: false, error: 'La plataforma no está configurada en el marcador (PLATAFORMA_URL).' });
+  try {
+    const r = await fetch(`${PLATAFORMA_URL}/api/canal/pendientes?sala=${encodeURIComponent(room)}`, {
+      headers: { 'x-admin-pin': ADMIN_PIN },
+      signal: AbortSignal.timeout(8000),
+    });
+    const body = await r.json().catch(() => ({}));
+    res.status(r.ok && body.ok ? 200 : 502).json(r.ok && body.ok ? { ok: true, partidos: body.partidos || [] } : { ok: false, error: body.error || 'La plataforma no respondió bien.' });
+  } catch {
+    res.status(502).json({ ok: false, error: 'No se pudo contactar a la plataforma.' });
   }
 });
 
