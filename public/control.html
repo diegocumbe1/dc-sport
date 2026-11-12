@@ -77,11 +77,13 @@
 <!-- Orden de saque: se define antes del primer punto (el juez o quien tenga el control). -->
 <div class="overlay hidden" id="serveOv">
   <div class="box">
-    <h2>🏐 Orden de saque</h2>
-    <p class="muted" style="font-size:14px;margin:0 0 8px">Escribe el número de camiseta de cada jugador en el orden en que sacan. Déjalo vacío si no lo necesitas.</p>
+    <h2 id="serveTitle">🏐 Orden de saque</h2>
+    <p class="muted" id="serveHelp" style="font-size:14px;margin:0 0 8px"></p>
     <div id="serveTeams" style="display:grid;gap:12px;text-align:left"></div>
-    <p class="muted" style="margin:12px 0 4px;font-size:14px">¿Quién saca primero?</p>
-    <div class="row" id="serveFirst" style="margin-top:0"></div>
+    <div id="serveFirstWrap">
+      <p class="muted" style="margin:12px 0 4px;font-size:14px">¿Quién saca primero?</p>
+      <div class="row" id="serveFirst" style="margin-top:0"></div>
+    </div>
     <div class="row">
       <button class="alt" id="serveSkip" type="button">Ahora no</button>
       <button class="ok" id="serveSave" type="button">Guardar orden</button>
@@ -310,12 +312,14 @@
     $('jUndo').disabled = !s.canUndo;
     $('mEnd').classList.toggle('hidden', !(s.phase === 'playing' && (s.points.some(p => p > 0) || s.teamSets.some(x => x > 0))));
     $('mSwapServe').classList.toggle('hidden', !(s.hasServeOrder && s.phase === 'playing' && s.points.every(p => p === 0)));
-    $('mServeOrder').classList.toggle('hidden', !s.pristine);
-    $('jServe').classList.toggle('hidden', !(judge && s.pristine));
-    $('jServe').textContent = s.hasServeOrder ? '🏐 Orden de saque (cambiar)' : '🏐 Marcar orden de saque';
-    // Si cae el primer punto con el panel abierto, se cierra. Al abrir el enlace del juez se ofrece una vez.
-    if (!s.pristine) $('serveOv').classList.add('hidden');
-    else if (judge && !s.hasServeOrder && !serveAutoShown) { serveAutoShown = true; openServeOrder(); }
+    // El orden de saque se puede abrir en cualquier momento (cambio de jugador, nueva lista entre sets).
+    const serveEditable = s.phase === 'playing' || s.phase === 'setOver';
+    $('mServeOrder').classList.toggle('hidden', !serveEditable);
+    $('jServe').classList.toggle('hidden', !(judge && serveEditable));
+    $('jServe').textContent = !s.hasServeOrder ? '🏐 Marcar orden de saque' : '🏐 Saque: cambiar jugador u orden';
+    if (!serveEditable) $('serveOv').classList.add('hidden');
+    // Al abrir el enlace del juez con el partido sin empezar, se ofrece una vez.
+    else if (judge && s.pristine && !s.hasServeOrder && !serveAutoShown) { serveAutoShown = true; openServeOrder(); }
     $('lastUndo').textContent = s.lastUndo ? 'Deshacer revierte: ' + s.lastUndo : '';
     $('target').value = s.config.pointsPerSet;
     $('target').disabled = s.points.some(v => v !== 0);
@@ -351,7 +355,7 @@
       } else {
         buttons = `<button class="ok" data-act="next">Comenzar set ${s.currentSet + 1}</button>`;
       }
-      $('soButtons').innerHTML = buttons + `<button class="alt" data-act="undo">Deshacer último punto</button><button class="alt" data-act="end">🏁 Finalizar partido</button>`;
+      $('soButtons').innerHTML = buttons + `<button class="alt" data-act="serve">🏐 Orden de saque</button><button class="alt" data-act="undo">Deshacer último punto</button><button class="alt" data-act="end">🏁 Finalizar partido</button>`;
     } else {
       $('soTitle').textContent = `¡${s.teams[s.matchWinner].name} gana el partido!`;
       $('soText').textContent = `Sets ${s.sets[0]}-${s.sets[1]} · Último set ${score}${s.torneo ? '. El organizador confirmará el resultado en el torneo.' : ''}`;
@@ -516,22 +520,46 @@
   // ---------- Orden de saque (antes del primer punto) ----------
   const SERVE_BOXES = 6, SERVE_BOXES_MAX = 12;
   let firstSide = 0;
+  let curPos = null; // posición (1…n) de quien saca ahora, en el equipo que tiene el saque
   let serveAutoShown = false;
-  const serveBox = (side, pos, v = '') => `<input class="t-serve" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="Lado ${side + 1}, saque ${pos + 1}" value="${DC.esc(String(v))}">`;
+  const serveBox = (side, pos, v = '', on = false) => `<input class="t-serve${on ? ' serving' : ''}" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" aria-label="Lado ${side + 1}, saque ${pos + 1}" value="${DC.esc(String(v))}">`;
   function drawFirst() {
     $('serveFirst').innerHTML = state.teams.map((t, i) =>
       `<button type="button" class="${i === firstSide ? 'ok' : 'alt'}" data-side="${i}">${DC.esc(t.name)}</button>`).join('');
   }
+  // Fila de marcas bajo las casillas del equipo que saca: «●» = le toca ahora.
+  function drawCur(field) {
+    const marks = field.querySelector('.serve-marks');
+    if (!marks) return;
+    const boxes = [...field.querySelectorAll('.t-serve')];
+    marks.innerHTML = boxes.map((b, k) => `<button type="button" class="mark${k + 1 === curPos ? ' on' : ''}" data-pos="${k + 1}" ${b.value === '' ? 'disabled' : ''} aria-label="Saca el de la posición ${k + 1}">${k + 1 === curPos ? '●' : '○'}</button>`).join('');
+    boxes.forEach((b, k) => b.classList.toggle('serving', k + 1 === curPos));
+  }
   function openServeOrder() {
-    if (!state || !state.pristine) return;
-    firstSide = state.firstServer === 1 ? 1 : 0;
-    $('serveTeams').innerHTML = state.teams.map((t, side) => {
+    const s = state;
+    if (!s || !(s.phase === 'playing' || s.phase === 'setOver')) return;
+    const start = s.pristine; // sin puntos: también se elige quién saca primero
+    const live = !start && s.phase === 'playing' && s.hasServeOrder && s.serve !== null;
+    firstSide = s.firstServer === 1 ? 1 : 0;
+    curPos = live ? Math.max(1, (s.serveTurn[s.court[s.serve]] || 1)) : null;
+    $('serveTitle').textContent = start ? '🏐 Orden de saque' : '🏐 Cambio de jugador / orden de saque';
+    $('serveHelp').textContent = start
+      ? 'Escribe el número de camiseta de cada jugador en el orden en que sacan. Déjalo vacío si no lo necesitas.'
+      : (s.phase === 'setOver'
+        ? 'Ajusta el orden para el próximo set (cada set empieza otra vez por el primero). Para un cambio de jugador, reemplaza su número.'
+        : 'Cambia el número del jugador que entra, o reordena. El marcador y quién saca no se tocan. Con ● marcas a quién le toca sacar ahora.');
+    $('serveTeams').innerHTML = s.teams.map((t, side) => {
       const vals = t.serveOrder || [];
       const n = Math.min(Math.max(SERVE_BOXES, vals.length + 1), SERVE_BOXES_MAX);
-      return `<div class="field"><span style="color:${t.color};font-weight:700">${DC.esc(t.name)}</span>
-        <span class="serve-boxes">${Array.from({ length: n }, (_, k) => serveBox(side, k, vals[k] ?? '')).join('')}</span></div>`;
+      const serving = live && s.serve === side;
+      return `<div class="field" data-side="${side}"><span style="color:${t.color};font-weight:700">${DC.esc(t.name)}${serving ? ' · 🏐 saca' : ''}</span>
+        <span class="serve-boxes">${Array.from({ length: n }, (_, k) => serveBox(side, k, vals[k] ?? '', serving && k + 1 === curPos)).join('')}</span>
+        ${serving ? '<span class="serve-boxes serve-marks"></span>' : ''}</div>`;
     }).join('');
-    drawFirst();
+    if (live) drawCur($('serveTeams').children[s.serve]);
+    $('serveFirstWrap').classList.toggle('hidden', !start);
+    $('serveSkip').textContent = start ? 'Ahora no' : 'Cancelar';
+    if (start) drawFirst();
     $('serveOv').classList.remove('hidden');
     closeMenu();
   }
@@ -540,12 +568,19 @@
     if (!box.classList.contains('t-serve')) return;
     box.value = box.value.replace(/\D/g, '').slice(0, 2);
     const wrap = box.parentElement;
+    const field = wrap.closest('.field');
     const boxes = [...wrap.children];
     if (boxes.length < SERVE_BOXES_MAX && boxes.every(b => b.value)) {
-      const side = [...$('serveTeams').children].indexOf(wrap.closest('.field'));
-      wrap.insertAdjacentHTML('beforeend', serveBox(side, boxes.length));
+      wrap.insertAdjacentHTML('beforeend', serveBox(Number(field.dataset.side), boxes.length));
     }
     if (box.value.length === 2 && box.nextElementSibling) box.nextElementSibling.focus();
+    drawCur(field);
+  });
+  $('serveTeams').addEventListener('click', e => {
+    const m = e.target.closest('button.mark');
+    if (!m) return;
+    curPos = Number(m.dataset.pos);
+    drawCur(m.closest('.field'));
   });
   $('serveFirst').addEventListener('click', e => {
     const b = e.target.closest('button[data-side]');
@@ -557,9 +592,13 @@
     const lists = [...$('serveTeams').children].map(f => [...f.querySelectorAll('.t-serve')].map(i => i.value).filter(v => v !== '').map(Number));
     const dup = lists.findIndex(l => new Set(l).size !== l.length);
     if (dup >= 0) return DC.toast(`${s.teams[dup].name}: hay un número repetido`, 'bad');
-    // Los equipos que esperan en la cola conservan el suyo; los dos de la cancha toman lo escrito.
-    const orders = s.allTeams.map((t, i) => { const side = s.court.indexOf(i); return side >= 0 ? lists[side] : (t.serveOrder || []); });
-    const res = await run({ type: 'serveOrder', orders, first: s.court[firstSide] }, lists.some(l => l.length) ? 'Orden de saque guardado' : 'Sin orden de saque');
+    const start = s.pristine;
+    // Los dos equipos de la cancha toman lo escrito; los que esperan en la cola no cambian (null).
+    const orders = s.allTeams.map((t, i) => { const side = s.court.indexOf(i); return side >= 0 ? lists[side] : (start ? (t.serveOrder || []) : null); });
+    const cmd = { type: 'serveOrder', orders };
+    if (start) cmd.first = s.court[firstSide];
+    else if (curPos !== null && s.phase === 'playing' && s.serve !== null && lists[s.serve].length) cmd.current = Math.min(curPos, lists[s.serve].length);
+    const res = await run(cmd, start ? (lists.some(l => l.length) ? 'Orden de saque guardado' : 'Sin orden de saque') : 'Saque actualizado');
     if (res.ok) $('serveOv').classList.add('hidden');
   };
   $('mServeOrder').onclick = openServeOrder;

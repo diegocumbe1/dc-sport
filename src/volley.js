@@ -355,25 +355,47 @@ function apply(g, cmd, { admin = false } = {}) {
       addLog(g, `Equipos: ${g.teams.map(t => t.name).join(', ')}`, by);
       break;
     }
-    // `serveOrder` lo usa el juez desde su enlace: sin PIN, pero solo antes del primer punto
-    // (la misma guarda de abajo). `setServeOrder` sigue pidiendo PIN (creación del tablero).
+    // `serveOrder` lo usa el juez desde su enlace, sin PIN. Antes del primer punto define el orden
+    // y quién saca primero. Ya iniciado (o entre sets) solo corrige números y orden —cambio de
+    // jugador, lista nueva para el set— sin tocar el marcador ni quién saca; con `current`
+    // (posición 1…n) también corrige a quién le toca sacar ahora. `setServeOrder` pide PIN.
     case 'serveOrder':
     case 'setServeOrder': {
       if (cmd.type === 'setServeOrder' && !admin) return fail('Requiere PIN de administración');
-      if (!isPristine(g)) return fail('El orden de saque se define antes de iniciar el partido');
+      const pristine = isPristine(g);
+      if (cmd.type === 'setServeOrder' && !pristine) return fail('El orden de saque se define antes de iniciar el partido');
+      if (g.phase === 'matchOver' || g.phase === 'finished') return fail('El partido ya terminó');
       const orders = cmd.orders === undefined ? [] : cmd.orders;
       const first = cmd.first === undefined ? 0 : cmd.first;
       if (!Array.isArray(orders) || orders.length > g.teams.length) return fail('Orden de saque inválido');
       const valid = o => Array.isArray(o) && o.length <= MAX_SERVE_ORDER && o.every(n => nonNegInt(n, MAX_JERSEY));
-      if (!orders.every(valid)) return fail(`Orden de saque: hasta ${MAX_SERVE_ORDER} números de 0 a ${MAX_JERSEY}`);
+      if (!orders.every(o => (!pristine && o == null) || valid(o))) return fail(`Orden de saque: hasta ${MAX_SERVE_ORDER} números de 0 a ${MAX_JERSEY}`);
       if (!isSide(first)) return fail('Equipo que saca primero inválido');
+      if (pristine) {
+        g.teams.forEach((t, i) => {
+          if (orders[i] && orders[i].length) t.serveOrder = [...orders[i]];
+          else delete t.serveOrder;
+        });
+        g.firstServer = first;
+        beginServe(g, first);
+        if (hasServeOrder(g)) addLog(g, `Orden de saque: ${g.teams.filter(t => t.serveOrder).map(t => `${t.name} ${t.serveOrder.join('-')}`).join(' · ')}`, by);
+        break;
+      }
+      // Partido en curso o entre sets.
+      const current = cmd.current;
+      if (current !== undefined && !(Number.isInteger(current) && current >= 1 && current <= MAX_SERVE_ORDER)) return fail('Posición de saque inválida');
+      pushUndo(g, 'Cambio en el orden de saque');
       g.teams.forEach((t, i) => {
-        if (orders[i] && orders[i].length) t.serveOrder = [...orders[i]];
+        if (orders[i] == null) return; // null = ese equipo no cambia
+        if (orders[i].length) t.serveOrder = [...orders[i]];
         else delete t.serveOrder;
       });
-      g.firstServer = first;
-      beginServe(g, first);
-      if (hasServeOrder(g)) addLog(g, `Orden de saque: ${g.teams.filter(t => t.serveOrder).map(t => `${t.name} ${t.serveOrder.join('-')}`).join(' · ')}`, by);
+      if (current !== undefined && g.phase === 'playing' && g.serve !== null) {
+        const team = g.court[g.serve];
+        const len = (g.teams[team].serveOrder || []).length;
+        if (len) g.serveTurn[team] = Math.min(current, len);
+      }
+      addLog(g, `Cambio en el orden de saque: ${g.teams.filter(t => t.serveOrder).map(t => `${t.name} ${t.serveOrder.join('-')}`).join(' · ') || 'sin orden'}`, by);
       break;
     }
     case 'setCourt': {
@@ -547,6 +569,7 @@ function publicState(room, g) {
     pristine: isPristine(g),
     firstServer: g.firstServer,
     serveNumber: serverNumber(g),
+    serveTurn: g.serveTurn,
     currentSet: g.currentSet,
     target: targetPoints(g),
     maxPoints: maxPoints(g),

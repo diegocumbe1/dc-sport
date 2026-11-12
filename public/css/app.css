@@ -209,3 +209,10 @@ details.setup[open] > summary { margin-bottom: 12px; }
 .yt-box.solo-audio { opacity: 0; pointer-events: none; box-shadow: none; }
 .check-row { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin-top: 12px; text-align: left; }
 .check-row input { margin-top: 3px; }
+
+/* Orden de saque: casilla de quien saca ahora y marcas para elegirlo */
+.field input.t-serve.serving { border-color: #f5c518; box-shadow: 0 0 0 2px rgba(245,197,24,.45); }
+.serve-marks { margin-top: 2px; }
+.serve-marks .mark { background: transparent; border: 0; color: var(--muted); font-size: 20px; padding: 4px 0; min-height: 36px; }
+.serve-marks .mark.on { color: #f5c518; }
+.serve-marks .mark:disabled { opacity: .25; }

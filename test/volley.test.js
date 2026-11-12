@@ -458,7 +458,40 @@ test('orden de saque: el juez lo define sin PIN solo antes de iniciar', () => {
   assert.equal(g.setServer, 1);
   assert.equal(apply(g, { type: 'serveOrder', orders: [[1]], first: 0 }, {}).ok, true, 'se puede corregir mientras 0-0');
   pt(g, 0);
-  assert.equal(apply(g, { type: 'serveOrder', orders: [[1]], first: 0 }, {}).ok, false, 'ya inició');
+  assert.equal(apply(g, { type: 'setServeOrder', orders: [[1]], first: 0 }, { admin: true }).ok, false, 'setServeOrder solo antes de iniciar');
+});
+
+test('orden de saque: el juez cambia números y posición con el partido en curso', () => {
+  const g = makeGame();
+  apply(g, { type: 'serveOrder', orders: [[3, 7, 9], [2, 4, 6]], first: 0 }, {});
+  pt(g, 0); pt(g, 1); pt(g, 1); // B recupera el saque y mantiene: saca su 1.º (2)
+  const antes = JSON.stringify([g.points, g.serve, g.serveTurn]);
+  // Cambio de jugador: en B entra el 11 por el 2. No cambia puntos ni quién saca.
+  assert.equal(apply(g, { type: 'serveOrder', orders: [undefined, [11, 4, 6]] }, {}).ok, true);
+  assert.deepEqual(g.teams[1].serveOrder, [11, 4, 6]);
+  assert.equal(JSON.stringify([g.points, g.serve, g.serveTurn]), antes);
+  // Corrección de a quién le toca: la posición 3 del que saca.
+  assert.equal(apply(g, { type: 'serveOrder', orders: [], current: 3 }, {}).ok, true);
+  assert.equal(g.serveTurn[g.court[g.serve]], 3);
+  assert.equal(apply(g, { type: 'serveOrder', orders: [], current: 0 }, {}).ok, false);
+  // Deshacer revierte el cambio.
+  apply(g, { type: 'undo' });
+  assert.equal(g.serveTurn[g.court[g.serve]], 1);
+  apply(g, { type: 'undo' });
+  assert.deepEqual(g.teams[1].serveOrder, [2, 4, 6]);
+});
+
+test('orden de saque: se conserva entre sets y se puede ajustar antes del siguiente', () => {
+  const g = makeGame();
+  apply(g, { type: 'serveOrder', orders: [[3, 7], [2, 4]], first: 0 }, {});
+  for (let i = 0; i < 25; i++) pt(g, 0);
+  assert.equal(g.phase, 'setOver');
+  assert.equal(apply(g, { type: 'serveOrder', orders: [[7, 3]] }, {}).ok, true, 'reordenar entre sets');
+  apply(g, { type: 'nextSet' });
+  assert.equal(g.phase, 'playing');
+  assert.deepEqual(g.teams[0].serveOrder, [7, 3]);
+  assert.deepEqual(g.teams[1].serveOrder, [2, 4], 'el otro equipo conserva el suyo');
+  assert.deepEqual(g.serveTurn.map(n => n > 0), [false, true], 'saca primero el otro equipo, desde su primer número');
 });
 
 test('orden de saque: se conserva al guardar y cargar, y al renombrar equipos', () => {
