@@ -283,8 +283,8 @@ function apply(g, cmd, { admin = false } = {}) {
       break;
     }
     case 'resetMatch': {
-      // En un torneo el resultado es oficial: desde el control no se puede borrar.
-      if (g.torneo && !admin) return fail('En un torneo el partido no se puede reiniciar desde el control');
+      // En un torneo el juez también puede reiniciar (p. ej. se marcó en el set equivocado): el
+      // resultado oficial lo confirma el organizador en la plataforma, y el reinicio se puede deshacer.
       // Conserva equipos, configuración y bitácora; permite deshacer el reinicio.
       pushUndo(g, 'Reinicio de partido');
       const keepUndo = g.undo;

@@ -21,8 +21,9 @@ const server = http.createServer(app);
 // Latidos cortos: un celular que pierde la red libera su lugar en ~20 s.
 const io = new Server(server, { pingInterval: 10_000, pingTimeout: 10_000 });
 
-// Límite de dispositivos por sala: 1 marcador + 2 controles (admin no cuenta).
-const LIMITS = { marcador: 1, control: 2 };
+// Límite de dispositivos por sala: hasta 4 pantallas de marcador (TV, organizador, respaldo…; la
+// voz solo suena donde se activa) + 2 controles. El admin no cuenta.
+const LIMITS = { marcador: 4, control: 2 };
 const ROLES = ['marcador', 'control', 'admin'];
 const MARCADOR_COMMANDS = ['setVoiceStyle', 'setMusic'];
 
@@ -74,7 +75,7 @@ function seatError(room, role, team, socketId) {
   const others = membersOf(room, socketId).filter(d => d.role === role);
   if (others.length >= LIMITS[role]) {
     return role === 'marcador'
-      ? 'Ya hay un marcador conectado en esta sala (máximo 1)'
+      ? 'Ya hay 4 pantallas de marcador conectadas en esta sala (máximo 4)'
       : 'Ya hay 2 controles conectados en esta sala (máximo 2)';
   }
   if (role === 'control' && team !== null && others.some(d => d.team === team)) {

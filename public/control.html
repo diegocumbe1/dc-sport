@@ -325,8 +325,9 @@
     $('target').disabled = s.points.some(v => v !== 0);
     // En un torneo las reglas y el resultado no se cambian desde aquí.
     $('target').closest('label').classList.toggle('hidden', !!s.torneo);
-    $('mResetMatch').classList.toggle('hidden', !!s.torneo);
-    $('homeBtn').classList.toggle('hidden', !!s.torneo);
+    $('homeBtn').classList.toggle('hidden', !!s.torneo || judge);
+    // Juez o sala de torneo: sin accesos a Inicio ni a Administración (borrar salas, etc.).
+    for (const id of ['lnkHome', 'lnkAdmin']) $(id).classList.toggle('hidden', !!s.torneo || judge);
     document.body.classList.toggle('locked', s.phase !== 'playing');
 
     const ov = $('setOver');

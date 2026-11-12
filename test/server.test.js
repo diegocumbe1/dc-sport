@@ -95,12 +95,12 @@ test('cierre automático de set vía socket', async () => {
   assert.equal((await waitState(screen, s => s.currentSet === 2)).points[1], 0);
 });
 
-test('límite de dispositivos: 1 marcador + 2 controles, un control por equipo', async () => {
+test('límite de dispositivos: hasta 4 pantallas + 2 controles, un control por equipo', async () => {
   const room = 'sala4';
-  assert.equal((await client(room, 'marcador')).joinRes.ok, true);
-  const second = await client(room, 'marcador');
-  assert.equal(second.joinRes.ok, false);
-  assert.equal(second.joinRes.full, true);
+  for (let i = 0; i < 4; i++) assert.equal((await client(room, 'marcador')).joinRes.ok, true, `pantalla ${i + 1}`);
+  const fifth = await client(room, 'marcador');
+  assert.equal(fifth.joinRes.ok, false);
+  assert.equal(fifth.joinRes.full, true);
 
   const ctlA = await client(room, 'control', 0);
   assert.equal(ctlA.joinRes.ok, true);
