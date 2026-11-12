@@ -12,6 +12,8 @@
 <div class="sb">
   <div class="sb-top">
     <span class="brand"><a class="btn-home" id="homeBtn" href="/" title="Volver al inicio" aria-label="Volver al inicio">⌂</a> DC SPORT SCORE</span>
+    <!-- Firma mínima del torneo (solo en salas de torneo): tenue, no estorba al marcador. -->
+    <span class="sb-by hidden" id="by">Desarrollado por <b>Lynko</b> · Play Mundial</span>
     <div class="right">
       <span class="muted" id="room"></span>
       <span class="muted" id="presence"></span>
@@ -41,6 +43,8 @@
     </section>
   </div>
   <div class="sb-bottom" id="bottom"></div>
+  <!-- Quién organiza y patrocina el torneo: franja discreta al pie (la sala la recibe del torneo). -->
+  <div class="sb-sponsors hidden" id="sponsors" aria-label="Organiza y patrocinadores"></div>
 </div>
 <!-- Reproductor de YouTube (música del torneo). Por defecto solo audio: el video no tapa el
      marcador. En «⚙ Sonido» → «Mostrar video» se ve en la esquina. -->
@@ -133,9 +137,39 @@
   // ---------- Sonido: voz de la sala y música de YouTube ----------
   // Esta pantalla (PC o celular conectado a la TV y al parlante) es la que suena: aquí se
   // elige la voz, se prueba y se pone la música, que baja sola mientras habla la voz.
+  // ---------- Patrocinadores: valla al pie ----------
+  // Cinta continua de logos que corre de derecha a izquierda, sin cajas, como una valla
+  // publicitaria: quien organiza primero y luego los patrocinadores. Siempre en movimiento
+  // para que se alcancen a leer todos. `?patrocinios=0` la oculta en esta pantalla.
+  const spEl = $('sponsors');
+  const SP_COPIAS = 6;      // copias de la cinta: sin hueco al reiniciar la vuelta
+  const SP_SEG_POR_LOGO = 5; // segundos que tarda en pasar cada logo
+  let spClave = '';
+  const spLogo = x => `<img class="sp-logo" src="${DC.esc(x.logo)}" alt="${DC.esc(x.name)}" draggable="false">`;
+  function renderSponsors(s) {
+    const lista = (s.sponsors || []).filter(x => x && x.logo);
+    const ver = lista.length > 0 && DC.params.get('patrocinios') !== '0';
+    document.body.classList.toggle('has-sponsors', ver);
+    spEl.classList.toggle('hidden', !ver);
+    const clave = JSON.stringify(lista);
+    if (clave === spClave) return;
+    spClave = clave;
+    const organiza = lista.filter(x => x.role === 'organiza');
+    const apoyo = lista.filter(x => x.role !== 'organiza');
+    const tieneGestor = apoyo.some(x => x.role === 'gestor');
+    const tienePatro = apoyo.some(x => x.role === 'patrocinador');
+    const apoyoTitulo = tieneGestor && tienePatro ? 'Gestores y patrocinan' : tieneGestor ? 'Gestores' : 'Patrocinan';
+    const grupo = (copia) => `<div class="sp-grupo"${copia > 0 ? ' aria-hidden="true"' : ''}>`
+      + (organiza.length ? `<span class="sp-label">Organiza</span>${organiza.map(spLogo).join('')}` : '')
+      + (apoyo.length ? `<span class="sp-label">${apoyoTitulo}</span>${apoyo.map(spLogo).join('')}` : '')
+      + '</div>';
+    spEl.innerHTML = `<div class="sp-pista" style="--copias:${SP_COPIAS};--duracion:${lista.length * SP_SEG_POR_LOGO}s">`
+      + Array.from({ length: SP_COPIAS }, (_, i) => grupo(i)).join('') + '</div>';
+  }
+
   const api = DC.connect({
     role: 'marcador',
-    onState: s => { render(s); voiceFields.sync(s); syncMusic(s); },
+    onState: s => { render(s); voiceFields.sync(s); syncMusic(s); renderSponsors(s); $('by').classList.toggle('hidden', !s.torneo); },
     onConnection: (st, err) => DC.renderConnection($('conn'), st, err),
     onPresence: p => { $('presence').textContent = `Controles ${p.controls.length}/2`; },
   });

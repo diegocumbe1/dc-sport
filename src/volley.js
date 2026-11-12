@@ -31,6 +31,8 @@ const VOICE_PRESENCE = values('voicePresence');
 // Voz grabada (quién habla) y cómo se nombra a cada equipo en los anuncios (nombre o color).
 const VOICE_SPEAKERS = values('voiceSpeaker');
 const VOICE_ANNOUNCE = values('voiceAnnounce');
+const SPONSOR_ROLES = ['organiza', 'gestor', 'patrocinador'];
+const MAX_SPONSORS = 8;
 const MUSIC_DUCKS = [0, 0.2, 0.4, 1]; // cuánto baja la música al hablar la voz (0 = pausarla, 1 = no cambiar)
 const DEFAULT_MUSIC = { youtube: null, volume: 60, duck: 0.2, paused: false };
 const VOICE_GAIN_MIN = 0.5;
@@ -111,7 +113,11 @@ function makeGame(prev) {
     teams,
     config: prev ? { ...prev.config } : { ...DEFAULT_CONFIG },
     voice: prev ? { ...prev.voice } : { ...DEFAULT_VOICE },
+    // Quién organiza y patrocina el torneo: logos que la pantalla muestra en una franja discreta.
+    sponsors: prev && Array.isArray(prev.sponsors) ? prev.sponsors.map(x => ({ ...x })) : [],
     music: prev && prev.music ? { ...DEFAULT_MUSIC, ...prev.music } : { ...DEFAULT_MUSIC }, // youtube: { video, list } | null; volume 5-100; duck; paused
+    // Sala fija de una cancha: sirve a todos los partidos del día y el torneo la reconfigura (ver /siguiente).
+    canal: prev ? prev.canal === true : false,
     torneo: prev ? prev.torneo === true : false, // sala de un torneo: sin música y el juez no puede borrar el partido
     court: [0, 1],
     queue: teams.map((_, i) => i).slice(2),
@@ -486,6 +492,25 @@ function apply(g, cmd, { admin = false } = {}) {
       addLog(g, `Voz: ${speakerLabel(speaker)}, ${announceLabel(announce)}`, by);
       break;
     }
+    case 'setSponsors': {
+      // Logos de quien organiza y patrocina (los envía el torneo al crear la sala). Solo con PIN.
+      if (!admin) return fail('Requiere PIN de administración');
+      const list = cmd.sponsors === undefined ? [] : cmd.sponsors;
+      if (!Array.isArray(list) || list.length > MAX_SPONSORS) return fail(`Hasta ${MAX_SPONSORS} patrocinadores`);
+      const clean = [];
+      for (const x of list) {
+        const logo = x && typeof x.logo === 'string' ? x.logo.trim() : '';
+        if (!/^https?:\/\/[^\s"'<>]{4,400}$/.test(logo)) return fail('Logo de patrocinador inválido: debe ser un enlace http(s)');
+        clean.push({
+          name: cleanName(x.name, 'Patrocinador'),
+          logo,
+          role: SPONSOR_ROLES.includes(x.role) ? x.role : 'patrocinador',
+        });
+      }
+      g.sponsors = clean;
+      addLog(g, clean.length ? `Patrocinadores en pantalla: ${clean.length}` : 'Patrocinadores quitados', by);
+      break;
+    }
     case 'setMusic': {
       // Música de la pantalla (sin PIN): un enlace de YouTube, o vacío para quitarla.
       const empty = cmd.youtube === null || cmd.youtube === '' || cmd.youtube === undefined;
@@ -584,7 +609,9 @@ function publicState(room, g) {
     config: g.config,
     voice: g.voice,
     music: g.music,
+    sponsors: g.sponsors || [],
     torneo: g.torneo === true,
+    canal: g.canal === true,
     points: g.points,
     serve: g.serve,
     hasServeOrder: hasServeOrder(g),
@@ -642,6 +669,7 @@ function hydrate(raw) {
   if (!Number.isInteger(g.music.volume) || g.music.volume < 5 || g.music.volume > 100) g.music.volume = DEFAULT_MUSIC.volume;
   if (!MUSIC_DUCKS.includes(g.music.duck)) g.music.duck = DEFAULT_MUSIC.duck;
   g.music.paused = g.music.paused === true;
+  if (!Array.isArray(g.sponsors)) g.sponsors = [];
   if (!Array.isArray(g.undo)) g.undo = [];
   if (!Array.isArray(g.log)) g.log = [];
   return g;

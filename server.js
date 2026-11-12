@@ -280,6 +280,8 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
   Object.assign(draft, volley.makeGame(draft));
   // Sala creada por un torneo: sin música y sin reinicios desde el control.
   draft.torneo = body.torneo === true;
+  // Sala fija de una cancha (torneo): el juez puede pasar al siguiente partido sin cambiar de enlace.
+  draft.canal = body.canal === true;
   const steps = [
     { type: 'setTeams', teams: body.teams },
     {
@@ -296,6 +298,8 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
   if (body.music && typeof body.music === 'object' && body.music.youtube !== undefined) {
     steps.push({ type: 'setMusic', youtube: body.music.youtube });
   }
+  // Patrocinadores del torneo (logos); sin la lista se conservan los que tuviera la sala.
+  if (Array.isArray(body.sponsors)) steps.push({ type: 'setSponsors', sponsors: body.sponsors });
   // Orden de saque opcional por equipo; sin él, la sala queda sin orden.
   steps.push({ type: 'setServeOrder', orders: body.serveOrders, first: body.firstServer });
   // Voz opcional desde el inicio: encender/apagar, quién habla y si anuncia nombre o color.
@@ -325,6 +329,43 @@ app.post('/api/rooms/:room/setup', express.json({ limit: '10kb' }), (req, res) =
   res.json({ ok: true, state: stateOf(room) });
 });
 
+// ---------- Siguiente partido en una sala de cancha ----------
+// El juez toca «Siguiente partido →» y este servidor le pide a la plataforma que cargue el
+// próximo partido en LA MISMA sala: el enlace de la TV y el del juez no cambian. La plataforma
+// guarda antes lo que reportó el juez, así que no se pierde ningún resultado. Se autentica con
+// el PIN de administración (la plataforma lo conoce); necesita PLATAFORMA_URL.
+const PLATAFORMA_URL = String(process.env.PLATAFORMA_URL || '').replace(/\/$/, '');
+const siguienteEnCurso = new Set();
+app.post('/api/rooms/:room/siguiente', express.json({ limit: '1kb' }), async (req, res) => {
+  const room = normRoom(req.params.room);
+  if (!validRoom(room)) return res.status(400).json({ ok: false, error: 'Código de sala inválido' });
+  const g = games.get(room);
+  if (!g) return res.status(404).json({ ok: false, error: 'La sala no existe' });
+  if (!g.canal) return res.status(400).json({ ok: false, error: 'Esta sala no es de una cancha del torneo' });
+  if (!PLATAFORMA_URL) return res.status(503).json({ ok: false, error: 'La plataforma no está configurada en el marcador (PLATAFORMA_URL).' });
+  if (g.phase !== 'matchOver' && g.phase !== 'finished') {
+    return res.status(409).json({ ok: false, error: 'El partido sigue en juego: termínalo antes de pasar al siguiente.' });
+  }
+  if (siguienteEnCurso.has(room)) return res.status(429).json({ ok: false, error: 'Ya se está cargando el siguiente partido…' });
+  siguienteEnCurso.add(room);
+  try {
+    const r = await fetch(`${PLATAFORMA_URL}/api/canal/siguiente`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-pin': ADMIN_PIN },
+      body: JSON.stringify({ sala: room }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const body = await r.json().catch(() => ({}));
+    res.status(r.ok && body.ok ? 200 : (r.status >= 400 ? r.status : 502)).json(
+      r.ok && body.ok ? { ok: true, partido: body.partido || null } : { ok: false, error: body.error || 'La plataforma no respondió bien.' },
+    );
+  } catch {
+    res.status(502).json({ ok: false, error: 'No se pudo contactar a la plataforma.' });
+  } finally {
+    siguienteEnCurso.delete(room);
+  }
+});
+
 // Corrige los nombres de los equipos sin tocar el marcador (PIN en x-admin-pin). Lo usa el
 // torneo cuando la sala se creó con un nombre recortado o el equipo cambió de nombre.
 app.post('/api/rooms/:room/teams', express.json({ limit: '2kb' }), (req, res) => {
@@ -342,6 +383,23 @@ app.post('/api/rooms/:room/teams', express.json({ limit: '2kb' }), (req, res) =>
   broadcast(room);
   store.scheduleSave();
   res.json({ ok: true, changed: true });
+});
+
+// Cambia (o quita) los patrocinadores de una sala abierta sin tocar el marcador (PIN en x-admin-pin).
+// Lo usa el torneo cuando se publica, se quita o se deshabilita un patrocinador con partidos en vivo.
+app.post('/api/rooms/:room/sponsors', express.json({ limit: '10kb' }), (req, res) => {
+  const room = normRoom(req.params.room);
+  if (!validRoom(room)) return res.status(400).json({ ok: false, error: 'Código de sala inválido' });
+  const pin = checkPin(req.ip, req.get('x-admin-pin'));
+  if (!pin.ok) return res.status(403).json({ ok: false, error: pin.error });
+  const g = games.get(room);
+  if (!g) return res.status(404).json({ ok: false, error: 'La sala no existe' });
+  const sponsors = Array.isArray(req.body && req.body.sponsors) ? req.body.sponsors : [];
+  const r = volley.apply(g, { type: 'setSponsors', sponsors }, { admin: true });
+  if (!r.ok) return res.status(400).json(r);
+  broadcast(room);
+  store.scheduleSave();
+  res.json({ ok: true, sponsors: g.sponsors.length });
 });
 
 // Reinicia el partido de una sala a 0-0 (PIN en x-admin-pin). Conserva equipos, reglas, voz y

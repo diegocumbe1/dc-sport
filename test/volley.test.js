@@ -585,3 +585,26 @@ test('música: volumen, pausa y bajar al hablar se guardan en la sala y se valid
   assert.equal(hydrate({ music: { youtube: null } }).music.volume, 60, 'salas guardadas antes: valores por defecto');
   assert.equal(makeGame(g).music.volume, 35, 'nuevo partido conserva la música');
 });
+
+test('patrocinadores: solo con PIN, enlaces http(s) y se conservan al reiniciar', () => {
+  const g = makeGame();
+  const lista = [{ name: 'Xtreme Park Fase 4', logo: 'https://ejemplo.com/a.webp', role: 'organiza' }, { name: 'Jonathan', logo: 'https://ejemplo.com/b.webp', role: 'patrocinador' }];
+  assert.equal(apply(g, { type: 'setSponsors', sponsors: lista }, {}).ok, false, 'requiere PIN');
+  assert.equal(apply(g, { type: 'setSponsors', sponsors: lista }, { admin: true }).ok, true);
+  assert.equal(g.sponsors.length, 2);
+  assert.equal(apply(g, { type: 'setSponsors', sponsors: [{ name: 'X', logo: 'javascript:alert(1)' }] }, { admin: true }).ok, false, 'solo http(s)');
+  assert.equal(apply(g, { type: 'setSponsors', sponsors: Array(9).fill(lista[0]) }, { admin: true }).ok, false, 'máximo 8');
+  assert.equal(apply(g, { type: 'setSponsors', sponsors: [{ name: 'Sin rol', logo: 'https://ejemplo.com/c.png', role: 'otro' }] }, { admin: true }).ok, true);
+  assert.equal(g.sponsors[0].role, 'patrocinador', 'rol desconocido = patrocinador');
+  apply(g, { type: 'setSponsors', sponsors: lista }, { admin: true });
+  assert.equal(makeGame(g).sponsors.length, 2, 'un nuevo partido conserva los patrocinadores');
+  assert.equal(hydrate({}).sponsors.length, 0);
+});
+
+test('sala de cancha: la marca se conserva al reiniciar y al cargar de disco', () => {
+  const g = makeGame();
+  g.canal = true;
+  assert.equal(makeGame(g).canal, true, 'un partido nuevo en la misma sala sigue siendo de cancha');
+  assert.equal(hydrate(JSON.parse(JSON.stringify(g))).canal, true);
+  assert.equal(hydrate({}).canal, false);
+});
