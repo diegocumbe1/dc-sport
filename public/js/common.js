@@ -374,7 +374,7 @@
   // ---------- Voz grabada (public/audio/voz/<voz>, generada con scripts/generar-voces.js) ----------
   // En iPhone la voz del navegador PAUSA la música (Spotify); un audio normal suena encima sin
   // pausarla. Cada anuncio se arma uniendo audios (MP3 decodificados a mono 16 bits) en un solo
-  // WAV con un «ding» al inicio, y se reproduce con un único <audio> desbloqueado en el primer
+  // WAV, y se reproduce con un único <audio> desbloqueado en el primer
   // toque (iOS bloquea audios que no nacen de un toque). Hay varias voces (s.voice.speaker); los
   // nombres de los equipos los genera el servidor con la misma voz (/api/voz/<voz>?t=NOMBRE).
   // Si falta algún audio, se usa la voz del navegador.
@@ -482,7 +482,6 @@
     const n = x => (Number.isInteger(x) && x >= 0 && x <= CLIP_MAX_NUMBER ? 'n' + x : null);
     const [a, b] = s.points;
     let parts;
-    let lead = '|'; // pausa después del «ding»
     if (s.phase === 'finished') {
       const { winner, rows } = finalResult(s);
       if (!winner) parts = ['partido_finalizado', '|', 'empate_en_sets'];
@@ -500,7 +499,6 @@
       const srv = s.serve === 1 ? 1 : 0;
       const names = s.teams.map(team);
       const saca = s.serveNumber !== null ? ['saca_jugador_numero', n(s.serveNumber), names[srv]] : ['saca', names[srv]];
-      lead = ',';
       if (a === b) {
         parts = [...(a === 0 ? ['cero_a_cero'] : ['empate_a', n(a)]), ',', ...saca];
         if (a && s.maxPoints && a === s.maxPoints - 1) parts.push(',', 'punto_decisivo');
@@ -522,7 +520,8 @@
         if (Math.max(a, b) >= s.target - 1) parts.push('|', 'punto_de_set_para', names[a > b ? 0 : 1]);
       }
     }
-    return parts.includes(null) ? null : ['ding', lead, ...parts];
+    // Sin «ding» al inicio: la voz arranca de una (el tono sumaba ~0,7 s antes de la primera palabra).
+    return parts.includes(null) ? null : parts;
   }
 
   // ---- Volumen y presencia de la voz (ajustes de la sala, en Administración) ----
@@ -626,7 +625,7 @@
   function preloadClips(s) {
     if (!audioSupported) return;
     const speaker = speakerOf(s);
-    const common = ['ding', 'contra', 'cero_a_cero', 'empate_a', 'saca', 'saca_jugador_numero', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
+    const common = ['contra', 'cero_a_cero', 'empate_a', 'saca', 'saca_jugador_numero', 'punto_de_set_para', 'set_para', 'quedo', 'a'];
     for (let i = 0; i <= 30; i++) common.push('n' + i);
     // Números del orden de saque: se precargan para que el primer anuncio de cada uno no se demore.
     if (s) for (const t of s.allTeams) for (const j of t.serveOrder || []) common.push('n' + j);
@@ -687,9 +686,10 @@
       if (voiceKey(prev) !== voiceKey(s)) preloadClips(s);
       const changed = prev.points.join() !== s.points.join() || prev.phase !== s.phase || prev.currentSet !== s.currentSet || prev.serveNumber !== s.serveNumber;
       if (!changed) return;
-      // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último.
+      // Espera breve: si llegan varios cambios seguidos, solo se anuncia el último. Es corta
+      // porque un anuncio nuevo igual corta al anterior (clipToken): no se cruzan.
       clearTimeout(debounce);
-      debounce = setTimeout(() => announce(last, last.voice), s.hasServeOrder ? 200 : 600);
+      debounce = setTimeout(() => announce(last, last.voice), s.hasServeOrder ? 150 : 250);
     }
     // Debe llamarse dentro de un toque/clic del usuario (desbloquea el audio en móviles).
     function unlock() {
